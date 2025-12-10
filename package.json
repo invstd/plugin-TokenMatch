@@ -1,0 +1,18 @@
+{
+  "name": "figma-tokens-checker",
+  "version": "1.0.0",
+  "description": "A Figma plugin to connect to GitHub repositories and check design tokens",
+  "main": "code.js",
+  "scripts": {
+    "build": "tsc --noEmit && npm run bundle",
+    "bundle": "esbuild code.ts --bundle --format=iife --outfile=code.js --platform=browser --target=es2017",
+    "watch": "tsc --watch"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.90.0",
+    "esbuild": "^0.27.1",
+    "typescript": "^5.3.0"
+  }
+}

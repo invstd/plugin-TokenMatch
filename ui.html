@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    :root {
+      /* Dark theme (default) */
+      --bg-primary: #2B2B2B;
+      --bg-secondary: #262626;
+      --bg-tertiary: #2a2a2a;
+      --text-primary: #DCDCDC;
+      --text-secondary: #AEAEAE;
+      --text-tertiary: #737373;
+      --border-primary: #404040;
+      --border-secondary: #525252;
+      --accent-bg: #3E537A;
+      --accent-text: #C3D8FF;
+      --accent-hover: #4a6291;
+      --accent-active: #354768;
+      --focus-ring: rgba(195, 216, 255, 0.2);
+      --focus-border: #C3D8FF;
+      --success-bg: #144313;
+      --success-border: rgba(54, 116, 71, 0.48);
+      --success-text: #C1EBCB;
+      --success-meta: #99C0A3;
+      --error-bg: #5C0505;
+      --error-border: rgba(113, 50, 50, 0.48);
+      --error-text: #FCC0C0;
+      --error-meta: #E6A4A4;
+      --scrollbar-bg: #2B2B2B;
+      --scrollbar-thumb: #525252;
+      --scrollbar-thumb-hover: #737373;
+    }
+
+    body.light-theme {
+      /* Light theme */
+      --bg-primary: #FFFFFF;
+      --bg-secondary: #F5F5F5;
+      --bg-tertiary: #FAFAFA;
+      --text-primary: #1A1A1A;
+      --text-secondary: #666666;
+      --text-tertiary: #999999;
+      --border-primary: #D9D9D9;
+      --border-secondary: #BFBFBF;
+      --accent-bg: #3E537A;
+      --accent-text: #FFFFFF;
+      --accent-hover: #4a6291;
+      --accent-active: #354768;
+      --focus-ring: rgba(127, 181, 219, 0.3);
+      --focus-border: #7FB5DB;
+      --success-bg: #E8F5E9;
+      --success-border: rgba(76, 175, 80, 0.24);
+      --success-text: #1B5E20;
+      --success-meta: #2E7D32;
+      --error-bg: #FFEBEE;
+      --error-border: rgba(244, 67, 54, 0.24);
+      --error-text: #B71C1C;
+      --error-meta: #C62828;
+      --scrollbar-bg: #FFFFFF;
+      --scrollbar-thumb: #BFBFBF;
+      --scrollbar-thumb-hover: #999999;
+    }
+
+    * {
+      box-sizing: border-box;
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-bg);
+    }
+    
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 12px;
+      color: var(--text-primary);
+      background: var(--bg-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    h2 {
+      margin: 0 0 20px 0;
+      font-size: 14px;
+      font-weight: 400;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+    }
+
+    .section {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+    }
+
+    .label-hint {
+      font-weight: 400;
+      font-size: 10px;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border-primary);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      transition: all 0.15s ease;
+      background-color: var(--bg-secondary);
+      color: var(--text-primary);
+      height: 44px;
+      box-sizing: border-box;
+    }
+
+    input[type="text"]::placeholder,
+    input[type="password"]::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    input[type="text"]:hover,
+    input[type="password"]:hover {
+      border-color: var(--border-secondary);
+      background-color: var(--bg-tertiary);
+    }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus {
+      outline: none;
+      border-color: var(--focus-border);
+      background-color: var(--bg-tertiary);
+      box-shadow: 0 0 0 2px var(--focus-ring);
+    }
+
+    .select-wrapper {
+      position: relative;
+      width: 100%;
+    }
+
+    .custom-select {
+      width: 100%;
+      padding: 10px 36px 10px 12px;
+      border: 1px solid var(--border-primary);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      transition: all 0.15s ease;
+      background-color: var(--bg-secondary);
+      color: var(--text-primary);
+      cursor: pointer;
+      user-select: none;
+      height: 44px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+    }
+
+    .custom-select:hover {
+      border-color: var(--border-secondary);
+      background-color: var(--bg-tertiary);
+    }
+
+    .custom-select.open {
+      border-color: var(--focus-border);
+      background-color: var(--bg-tertiary);
+      box-shadow: 0 0 0 2px var(--focus-ring);
+    }
+
+    .custom-select:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .select-arrow {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      transition: transform 0.2s ease;
+      width: 12px;
+      height: 12px;
+    }
+
+    .select-arrow svg {
+      width: 100%;
+      height: 100%;
+      stroke: var(--text-secondary);
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .custom-select.open .select-arrow {
+      transform: translateY(-50%) rotate(180deg);
+    }
+
+    .select-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-primary);
+      border-radius: 6px;
+      overflow: hidden;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .select-option {
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+
+    .select-option:hover {
+      background-color: var(--bg-tertiary);
+    }
+
+    .select-option.selected {
+      background-color: var(--accent-bg);
+      color: var(--accent-text);
+    }
+
+    button {
+      width: 100%;
+      padding: 11px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      margin-bottom: 8px;
+      transition: all 0.15s ease;
+      position: relative;
+      height: 44px;
+      box-sizing: border-box;
+    }
+
+    .btn-primary {
+      background-color: var(--accent-bg);
+      color: var(--accent-text);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background-color: var(--accent-hover);
+    }
+
+    .btn-primary:active:not(:disabled) {
+      background-color: var(--accent-active);
+    }
+
+    .btn-primary:disabled {
+      background-color: var(--border-primary);
+      color: var(--text-tertiary);
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background-color: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-primary);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background-color: var(--bg-tertiary);
+      border-color: var(--border-secondary);
+    }
+
+    .result {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-top: 12px;
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      border: 1px solid;
+    }
+
+    .result-main {
+      color: var(--text-primary);
+      font-size: 13px;
+      font-weight: 500;
+      word-wrap: break-word;
+    }
+
+    .result-meta {
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 300;
+      word-wrap: break-word;
+    }
+
+    .result-success {
+      background-color: var(--success-bg);
+      border-color: var(--success-border);
+    }
+
+    .result-success .result-main {
+      color: var(--success-text);
+    }
+
+    .result-success .result-meta {
+      color: var(--success-meta);
+    }
+
+    .result-warning {
+      background-color: var(--error-bg);
+      border-color: var(--error-border);
+      opacity: 0.8;
+    }
+
+    .result-warning .result-main {
+      color: var(--error-text);
+    }
+
+    .result-warning .result-meta {
+      color: var(--error-meta);
+    }
+
+    .result-error {
+      background-color: var(--error-bg);
+      border-color: var(--error-border);
+    }
+
+    .result-error .result-main {
+      color: var(--error-text);
+    }
+
+    .result-error .result-meta {
+      color: var(--error-meta);
+    }
+
+    .content-wrapper {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .footer {
+      margin-top: auto;
+      padding-top: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid var(--border-primary);
+    }
+
+    .version-info {
+      font-size: 10px;
+      color: var(--text-tertiary);
+    }
+
+    .theme-toggle {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      background: none;
+      border: none;
+      padding: 4px 8px;
+      cursor: pointer;
+      text-decoration: underline;
+      transition: color 0.15s ease;
+      width: auto;
+      margin: 0;
+      height: auto;
+    }
+
+    .theme-toggle:hover {
+      color: var(--text-secondary);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-primary);
+    }
+
+    .header h2 {
+      margin: 0;
+    }
+
+    .settings-icon {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 4px;
+      transition: background-color 0.15s ease;
+      color: var(--text-secondary);
+    }
+
+    .settings-icon:hover {
+      background-color: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .settings-icon svg {
+      width: 100%;
+      height: 100%;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .page-view {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .page-view.hidden {
+      display: none;
+    }
+
+    .back-button {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 6px 8px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      transition: all 0.15s ease;
+      margin-bottom: 16px;
+    }
+
+    .back-button:hover {
+      background-color: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .back-button svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 13px;
+      height: 13px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin-left: 8px;
+      position: relative;
+      top: 1px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .tokens-display {
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-primary);
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .token-details {
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-primary);
+      border-radius: 6px;
+      padding: 16px;
+      margin-top: 12px;
+    }
+
+    .token-details-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .token-details-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .token-details-value {
+      font-size: 12px;
+      color: var(--text-secondary);
+      background-color: var(--bg-tertiary);
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-family: monospace;
+      margin-top: 8px;
+      word-break: break-all;
+    }
+
+    .components-list {
+      margin-top: 16px;
+    }
+
+    .components-list-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .component-item {
+      background-color: var(--bg-tertiary);
+      border: 1px solid var(--border-primary);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .component-item:hover {
+      background-color: var(--bg-secondary);
+      border-color: var(--border-secondary);
+    }
+
+    .component-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .component-item-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .component-item-page {
+      font-size: 11px;
+      color: var(--text-tertiary);
+    }
+
+    .component-item-properties {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .property-badge {
+      font-size: 10px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background-color: var(--accent-bg);
+      color: var(--accent-text);
+      font-weight: 500;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 24px;
+      color: var(--text-tertiary);
+      font-size: 12px;
+    }
+      font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+      font-size: 11px;
+      color: var(--text-primary);
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+      background: var(--scrollbar-bg);
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--scrollbar-bg);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--scrollbar-thumb);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--scrollbar-thumb-hover);
+    }
+  </style>
+</head>
+<body>
+  <!-- Main View -->
+  <div id="mainView" class="page-view">
+    <div class="content-wrapper">
+      <div class="header">
+        <h2 id="mainHeader">Scan</h2>
+        <button id="settingsBtn" class="btn-secondary" style="padding: 6px 12px; font-size: 12px;">
+          Settings
+        </button>
+      </div>
+      
+      <div class="section">
+        <button id="fetchTokensBtn" class="btn-secondary" style="margin-bottom: 16px;">
+          <span id="fetchTokensBtnText">Fetch Tokens</span>
+        </button>
+        <div class="label-hint" style="margin-top: -8px; margin-bottom: 16px; font-size: 11px; color: var(--text-tertiary);">
+          Fetch tokens from your GitHub repository first
+        </div>
+      </div>
+
+      <div class="section">
+        <label for="tokenNameInput">
+          Token Name
+          <span class="label-hint">Enter the name of the token to search for</span>
+        </label>
+        <input type="text" id="tokenNameInput" placeholder="e.g., color.primary.500" />
+      </div>
+
+      <div class="section">
+        <button id="scanBtn" class="btn-primary" disabled>
+          <span id="scanBtnText">Scan</span>
+        </button>
+      </div>
+
+      <div id="resultDisplay" class="result hidden"></div>
+      <div id="tokensDisplay" class="tokens-display hidden"></div>
+      <div id="componentsDisplay" class="tokens-display hidden"></div>
+      <div id="tokenDetailsDisplay" class="token-details hidden"></div>
+      <div id="componentsListDisplay" class="components-list hidden"></div>
+    </div>
+    
+    <div class="footer">
+      <div class="version-info">TokenMatch v1.0.0</div>
+      <button class="theme-toggle" id="themeToggle">Toggle Theme</button>
+    </div>
+  </div>
+
+  <!-- Settings View -->
+  <div id="settingsView" class="page-view hidden">
+    <div class="content-wrapper">
+      <button class="back-button" id="backButton" title="Back to main">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+        Back
+      </button>
+      
+      <div class="header">
+        <h2>GitHub Settings</h2>
+      </div>
+
+      <div class="section">
+        <label for="repoUrl">
+          Repository URL
+          <span class="label-hint">e.g., https://github.com/owner/repo</span>
+        </label>
+        <input type="text" id="repoUrl" placeholder="https://github.com/owner/repo" />
+      </div>
+
+      <div class="section">
+        <label for="token">
+          Personal Access Token
+          <span class="label-hint">GitHub token with repo access</span>
+        </label>
+        <input type="password" id="token" placeholder="ghp_xxxxxxxxxxxx" />
+      </div>
+
+      <button id="testConnectionBtn" class="btn-secondary">
+        <span id="testConnectionBtnText">Test Connection</span>
+      </button>
+
+      <div class="section">
+        <label for="branchSelect">Branch</label>
+        <div class="select-wrapper">
+          <div class="custom-select" id="branchSelect" disabled>
+            <span id="branchSelectText">Connect to repository first</span>
+            <div class="select-arrow">
+              <svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">
+                <polyline points="2,4 6,8 10,4"></polyline>
+              </svg>
+            </div>
+          </div>
+          <div class="select-dropdown hidden" id="branchDropdown"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <label for="filePath">
+          File or Directory Path
+          <span class="label-hint">Leave empty to fetch all token files, or specify a file/directory path</span>
+        </label>
+        <input type="text" id="filePath" placeholder="tokens.json or tokens/ or leave empty" />
+      </div>
+
+      <button id="saveConfigBtn" class="btn-primary">
+        <span id="saveConfigBtnText">Save Configuration</span>
+      </button>
+    </div>
+    
+    <div class="footer">
+      <div class="version-info">TokenMatch v1.0.0</div>
+      <button class="theme-toggle" id="themeToggle2">Toggle Theme</button>
+    </div>
+  </div>
+
+  <script>
+    const mainView = document.getElementById('mainView');
+    const settingsView = document.getElementById('settingsView');
+    const settingsIcon = document.getElementById('settingsIcon');
+    const backButton = document.getElementById('backButton');
+    const repoUrlInput = document.getElementById('repoUrl');
+    const tokenInput = document.getElementById('token');
+    const testConnectionBtn = document.getElementById('testConnectionBtn');
+    const testConnectionBtnText = document.getElementById('testConnectionBtnText');
+    const branchSelect = document.getElementById('branchSelect');
+    const branchSelectText = document.getElementById('branchSelectText');
+    const branchDropdown = document.getElementById('branchDropdown');
+    const filePathInput = document.getElementById('filePath');
+    const saveConfigBtn = document.getElementById('saveConfigBtn');
+    const saveConfigBtnText = document.getElementById('saveConfigBtnText');
+    // Old button references removed - using scanBtn now
+    const resultDisplay = document.getElementById('resultDisplay');
+    const tokensDisplay = document.getElementById('tokensDisplay');
+    const componentsDisplay = document.getElementById('componentsDisplay');
+    const tokenDetailsDisplay = document.getElementById('tokenDetailsDisplay');
+    const componentsListDisplay = document.getElementById('componentsListDisplay');
+    const themeToggle = document.getElementById('themeToggle');
+    const themeToggle2 = document.getElementById('themeToggle2');
+
+    let currentTheme = 'dark';
+    let selectedBranch = null;
+    let branches = [];
+
+    // Detect initial theme from system preference
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+      currentTheme = 'light';
+      document.body.classList.add('light-theme');
+    }
+
+    // Listen for system theme changes
+    if (window.matchMedia) {
+      window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+        if (e.matches) {
+          currentTheme = 'light';
+          document.body.classList.add('light-theme');
+        } else {
+          currentTheme = 'dark';
+          document.body.classList.remove('light-theme');
+        }
+      });
+    }
+
+    // Theme toggle (both views)
+    const toggleTheme = () => {
+      currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      document.body.classList.toggle('light-theme');
+    };
+    themeToggle.onclick = toggleTheme;
+    themeToggle2.onclick = toggleTheme;
+
+    // Navigation between views
+    settingsBtn.onclick = () => {
+      mainView.classList.add('hidden');
+      settingsView.classList.remove('hidden');
+    };
+
+    backButton.onclick = () => {
+      settingsView.classList.add('hidden');
+      mainView.classList.remove('hidden');
+    };
+
+    // Initialize UI state
+    updateScanButtonState();
+    updateMainHeader();
+    
+    // Verify message handler is set up
+    console.log('[UI] Message handler initialized');
+    
+    // Load saved configuration on startup
+    try {
+      parent.postMessage({ pluginMessage: { type: 'load-config' } }, '*');
+      console.log('[UI] Load config message sent');
+    } catch (error) {
+      console.error('[UI] Error sending load-config message:', error);
+    }
+
+    function setLoading(buttonText, isLoading, text = '') {
+      if (isLoading) {
+        buttonText.innerHTML = text + '<span class="spinner"></span>';
+      } else {
+        buttonText.textContent = text;
+      }
+    }
+
+    function showResult(mainText, metaText, type) {
+      resultDisplay.innerHTML = `
+        <div class="result-main">${mainText}</div>
+        ${metaText ? `<div class="result-meta">${metaText}</div>` : ''}
+      `;
+      resultDisplay.className = `result result-${type}`;
+      resultDisplay.classList.remove('hidden');
+    }
+
+    function hideResult() {
+      resultDisplay.classList.add('hidden');
+    }
+
+    function showTokens(content) {
+      tokensDisplay.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+      tokensDisplay.classList.remove('hidden');
+      componentsDisplay.classList.add('hidden');
+    }
+
+    function hideTokens() {
+      tokensDisplay.classList.add('hidden');
+    }
+
+    function showComponents(content) {
+      // Legacy: show raw JSON for old format
+      componentsDisplay.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+      componentsDisplay.classList.remove('hidden');
+      tokensDisplay.classList.add('hidden');
+    }
+
+    function hideComponents() {
+      componentsDisplay.classList.add('hidden');
+      tokenDetailsDisplay.classList.add('hidden');
+      componentsListDisplay.classList.add('hidden');
+    }
+
+    function showTokenResults(tokenName, tokenValue, matchingComponents) {
+      // Hide old displays
+      componentsDisplay.classList.add('hidden');
+      tokensDisplay.classList.add('hidden');
+      
+      // Show token details
+      const tokenValueStr = typeof tokenValue === 'object' 
+        ? JSON.stringify(tokenValue, null, 2)
+        : String(tokenValue);
+      
+      tokenDetailsDisplay.innerHTML = `
+        <div class="token-details-header">
+          <div class="token-details-title">Token: ${escapeHtml(tokenName)}</div>
+        </div>
+        <div class="token-details-value">${escapeHtml(tokenValueStr)}</div>
+      `;
+      tokenDetailsDisplay.classList.remove('hidden');
+      
+      // Show components list
+      if (matchingComponents && matchingComponents.length > 0) {
+        let componentsHtml = '<div class="components-list-title">Matching Components (' + matchingComponents.length + ')</div>';
+        
+        matchingComponents.forEach(component => {
+          const propertiesHtml = component.matchedProperties
+            ? component.matchedProperties.map(prop => 
+                `<span class="property-badge">${escapeHtml(prop)}</span>`
+              ).join('')
+            : '';
+          
+          componentsHtml += `
+            <div class="component-item" data-component-id="${escapeHtml(component.id)}">
+              <div class="component-item-header">
+                <div class="component-item-name">${escapeHtml(component.name)}</div>
+                <div class="component-item-page">${escapeHtml(component.page)}</div>
+              </div>
+              ${propertiesHtml ? `<div class="component-item-properties">${propertiesHtml}</div>` : ''}
+            </div>
+          `;
+        });
+        
+        componentsListDisplay.innerHTML = componentsHtml;
+        componentsListDisplay.classList.remove('hidden');
+        
+        // Add click handlers for component navigation
+        componentsListDisplay.querySelectorAll('.component-item').forEach(item => {
+          item.addEventListener('click', () => {
+            const componentId = item.getAttribute('data-component-id');
+            if (componentId) {
+              parent.postMessage({
+                pluginMessage: {
+                  type: 'navigate-to-component',
+                  componentId: componentId
+                }
+              }, '*');
+            }
+          });
+        });
+      } else {
+        componentsListDisplay.innerHTML = '<div class="empty-state">No components found using this token</div>';
+        componentsListDisplay.classList.remove('hidden');
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Test connection
+    let connectionTimeoutId = null;
+    if (testConnectionBtn && repoUrlInput && tokenInput) {
+      testConnectionBtn.onclick = () => {
+        const repoUrl = repoUrlInput.value.trim();
+        const token = tokenInput.value.trim();
+
+        if (!repoUrl) {
+          showResult('Please enter a repository URL', null, 'error');
+          return;
+        }
+
+        if (!token) {
+          showResult('Please enter a personal access token', null, 'error');
+          return;
+        }
+
+      // Clear any existing timeout
+      if (connectionTimeoutId) {
+        clearTimeout(connectionTimeoutId);
+        connectionTimeoutId = null;
+      }
+
+      hideResult();
+      hideTokens();
+      testConnectionBtn.disabled = true;
+      setLoading(testConnectionBtnText, true, 'Testing');
+      
+      console.log('[UI] Sending test-connection message', { repoUrl, tokenLength: token.length });
+
+      try {
+        parent.postMessage({
+          pluginMessage: {
+            type: 'test-connection',
+            repoUrl: repoUrl,
+            token: token
+          }
+        }, '*');
+        
+        console.log('[UI] Message sent successfully');
+      } catch (error) {
+        console.error('[UI] Error sending message:', error);
+        testConnectionBtn.disabled = false;
+        setLoading(testConnectionBtnText, false, 'Test Connection');
+        showResult('Failed to send message', error.message || 'Unknown error', 'error');
+        return;
+      }
+      
+      // Add a timeout fallback in case the message never comes back
+      connectionTimeoutId = setTimeout(() => {
+        if (testConnectionBtn.disabled) {
+          console.warn('[UI] Test connection timeout - re-enabling button');
+          testConnectionBtn.disabled = false;
+          setLoading(testConnectionBtnText, false, 'Test Connection');
+          showResult('Connection timeout', 'The request took too long. Please check your internet connection and try again.', 'error');
+          connectionTimeoutId = null;
+        }
+      }, 15000); // 15 second timeout
+    };
+
+    // Branch selector
+    branchSelect.onclick = (e) => {
+      if (branchSelect.disabled || branches.length === 0) return;
+      e.stopPropagation();
+      branchSelect.classList.toggle('open');
+      branchDropdown.classList.toggle('hidden');
+    };
+
+    document.addEventListener('click', () => {
+        branchSelect.classList.remove('open');
+        branchDropdown.classList.add('hidden');
+    });
+
+    function updateBranchSelector(branchList) {
+      branches = branchList;
+      branchDropdown.innerHTML = '';
+      
+      if (branches.length === 0) {
+        branchSelect.disabled = true;
+        branchSelectText.textContent = 'No branches found';
+        return;
+      }
+
+      branchSelect.disabled = false;
+      
+      branches.forEach(branch => {
+        const option = document.createElement('div');
+        option.className = 'select-option';
+        if (branch === selectedBranch) {
+          option.classList.add('selected');
+        }
+        option.textContent = branch;
+        option.onclick = (e) => {
+          e.stopPropagation();
+          selectedBranch = branch;
+          branchSelectText.textContent = branch;
+          branchSelect.classList.remove('open');
+          branchDropdown.classList.add('hidden');
+          
+          // Update selected state
+          branchDropdown.querySelectorAll('.select-option').forEach(opt => {
+            opt.classList.remove('selected');
+          });
+          option.classList.add('selected');
+          
+          updateMainHeader();
+        };
+        branchDropdown.appendChild(option);
+      });
+
+      if (selectedBranch && branches.includes(selectedBranch)) {
+        branchSelectText.textContent = selectedBranch;
+      } else if (branches.length > 0) {
+        branchSelectText.textContent = 'Select a branch';
+      }
+    }
+
+    function updateScanButtonState() {
+      const hasTokenName = tokenNameInput.value.trim() !== '';
+      scanBtn.disabled = !hasTokenName || !tokensFetched;
+      
+      if (!tokensFetched) {
+        scanBtn.title = 'Fetch tokens first';
+      } else if (!hasTokenName) {
+        scanBtn.title = 'Enter a token name';
+      } else {
+        scanBtn.title = '';
+      }
+    }
+    
+    function updateMainHeader() {
+      if (selectedBranch) {
+        mainHeader.textContent = `Scan + ${selectedBranch}`;
+      } else {
+        mainHeader.textContent = 'Scan';
+      }
+    }
+
+    // Save configuration
+    saveConfigBtn.onclick = () => {
+      const repoUrl = repoUrlInput.value.trim();
+      const token = tokenInput.value.trim();
+      const branch = selectedBranch;
+      const filePath = filePathInput.value.trim(); // Can be empty
+
+      if (!repoUrl || !token || !branch) {
+        showResult('Please fill in repository URL, token, and select a branch', null, 'error');
+        return;
+      }
+
+      hideResult();
+      saveConfigBtn.disabled = true;
+      setLoading(saveConfigBtnText, true, 'Saving');
+
+      parent.postMessage({
+        pluginMessage: {
+          type: 'save-config',
+          repoUrl: repoUrl,
+          token: token,
+          branch: branch,
+          filePath: filePath
+        }
+      }, '*');
+    };
+
+    // Fetch tokens button (main view) - uses saved config
+    if (fetchTokensBtn && fetchTokensBtnText) {
+      fetchTokensBtn.onclick = () => {
+        // Try to get config from settings inputs if available
+        let repoUrl = '';
+        let token = '';
+        let branch = null;
+        let filePath = '';
+        
+        if (repoUrlInput && repoUrlInput.value.trim()) {
+          repoUrl = repoUrlInput.value.trim();
+        }
+        if (tokenInput && tokenInput.value.trim()) {
+          token = tokenInput.value.trim();
+        }
+        if (selectedBranch) {
+          branch = selectedBranch;
+        }
+        if (filePathInput && filePathInput.value.trim()) {
+          filePath = filePathInput.value.trim();
+        }
+        
+        // If not available, request saved config
+        if (!repoUrl || !token || !branch) {
+          parent.postMessage({
+            pluginMessage: {
+              type: 'load-config'
+            }
+          }, '*');
+          
+          // Wait for config to load
+          setTimeout(() => {
+            if (window.savedConfig) {
+              repoUrl = window.savedConfig.repoUrl || '';
+              token = window.savedConfig.token || '';
+              branch = window.savedConfig.branch || null;
+              filePath = window.savedConfig.filePath || '';
+            }
+            
+            if (!repoUrl || !token || !branch) {
+              showResult('Please configure GitHub settings first', 'Go to Settings to set up your repository connection', 'error');
+              return;
+            }
+
+            hideResult();
+            hideTokens();
+            fetchTokensBtn.disabled = true;
+            setLoading(fetchTokensBtnText, true, 'Fetching');
+
+            parent.postMessage({
+              pluginMessage: {
+                type: 'fetch-tokens',
+                repoUrl: repoUrl,
+                token: token,
+                branch: branch,
+                filePath: filePath
+              }
+            }, '*');
+          }, 300);
+          return;
+        }
+
+        hideResult();
+        hideTokens();
+        fetchTokensBtn.disabled = true;
+        setLoading(fetchTokensBtnText, true, 'Fetching');
+
+        parent.postMessage({
+          pluginMessage: {
+            type: 'fetch-tokens',
+            repoUrl: repoUrl,
+            token: token,
+            branch: branch,
+            filePath: filePath
+          }
+        }, '*');
+      };
+    }
+
+    // Settings page still uses updateFetchButtonState for fetch button
+    function updateFetchButtonState() {
+      const hasRepo = repoUrlInput.value.trim() !== '';
+      const hasToken = tokenInput.value.trim() !== '';
+      const hasBranch = selectedBranch !== null;
+      const fetchTokensBtn = document.getElementById('fetchTokensBtn');
+      if (fetchTokensBtn) {
+        fetchTokensBtn.disabled = !(hasRepo && hasToken && hasBranch);
+      }
+    }
+    
+    repoUrlInput.addEventListener('input', updateFetchButtonState);
+    tokenInput.addEventListener('input', updateFetchButtonState);
+    filePathInput.addEventListener('input', updateFetchButtonState);
+
+    // Handle Enter key
+    [repoUrlInput, tokenInput, filePathInput].forEach(input => {
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          if (input === repoUrlInput || input === tokenInput) {
+            testConnectionBtn.click();
+          } else {
+            // Only click fetch button if it exists
+            const fetchBtn = document.getElementById('fetchTokensBtn');
+            if (fetchBtn) {
+              fetchBtn.click();
+            }
+          }
+        }
+      });
+    });
+
+    // Listen for messages from plugin
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+
+      if (msg.type === 'theme') {
+        currentTheme = msg.theme;
+        if (msg.theme === 'light') {
+          document.body.classList.add('light-theme');
+        }
+      }
+
+      if (msg.type === 'config-loaded') {
+        if (msg.config) {
+          repoUrlInput.value = msg.config.repoUrl || '';
+          tokenInput.value = msg.config.token || '';
+          filePathInput.value = msg.config.filePath || '';
+          selectedBranch = msg.config.branch || null;
+          updateMainHeader();
+          
+          // If we have a branch, try to test connection to populate branches
+          if (msg.config.repoUrl && msg.config.token) {
+            testConnectionBtn.click();
+          } else if (selectedBranch) {
+            branchSelectText.textContent = selectedBranch;
+            branchSelect.disabled = false;
+          }
+        }
+      }
+
+      if (msg.type === 'connection-result') {
+        console.log('[UI] Received connection-result:', msg);
+        
+        // Clear timeout if response received
+        if (connectionTimeoutId) {
+          clearTimeout(connectionTimeoutId);
+          connectionTimeoutId = null;
+        }
+        
+        if (testConnectionBtn && testConnectionBtnText) {
+          testConnectionBtn.disabled = false;
+          setLoading(testConnectionBtnText, false, 'Test Connection');
+        }
+
+        if (msg.success) {
+          updateBranchSelector(msg.branches);
+          
+          // Auto-select saved branch if available
+          if (selectedBranch && msg.branches.includes(selectedBranch)) {
+            branchSelectText.textContent = selectedBranch;
+            const options = branchDropdown.querySelectorAll('.select-option');
+            options.forEach(opt => {
+              if (opt.textContent === selectedBranch) {
+                opt.classList.add('selected');
+              }
+            });
+          }
+          
+          showResult(
+            `Successfully connected to ${msg.owner}/${msg.repo}`,
+            `Found ${msg.branches.length} branch${msg.branches.length === 1 ? '' : 'es'}`,
+            'success'
+          );
+          updateMainHeader();
+        } else {
+          showResult('Connection failed', msg.error || 'Unknown error', 'error');
+          if (branchSelect) branchSelect.disabled = true;
+          if (branchSelectText) branchSelectText.textContent = 'Connect to repository first';
+          branches = [];
+        }
+      }
+
+      if (msg.type === 'config-saved') {
+        saveConfigBtn.disabled = false;
+        setLoading(saveConfigBtnText, false, 'Save Configuration');
+        showResult('Configuration saved successfully', null, 'success');
+        // Return to main view after saving
+        setTimeout(() => {
+          settingsView.classList.add('hidden');
+          mainView.classList.remove('hidden');
+        }, 1000);
+      }
+      
+      if (msg.type === 'fetch-progress') {
+        showResult(msg.message, null, 'success');
+      }
+
+      if (msg.type === 'tokens-result') {
+        const fetchTokensBtn = document.getElementById('fetchTokensBtn');
+        const fetchTokensBtnText = document.getElementById('fetchTokensBtnText');
+        if (fetchTokensBtn && fetchTokensBtnText) {
+          fetchTokensBtn.disabled = false;
+          setLoading(fetchTokensBtnText, false, 'Fetch Tokens');
+        }
+        
+        // Mark tokens as fetched if successful
+        if (msg.success) {
+          tokensFetched = true;
+          updateScanButtonState();
+        }
+
+        if (msg.success) {
+          // New parsed tokens structure
+          if (msg.tokens && Array.isArray(msg.tokens)) {
+            const tokenCount = msg.tokens.length;
+            const errorCount = msg.errors ? msg.errors.length : 0;
+            
+            let resultMessage = `Successfully parsed ${tokenCount} token${tokenCount === 1 ? '' : 's'}`;
+            let metaMessage = null;
+            
+            if (errorCount > 0) {
+              // Categorize errors
+              const errorCategories = {};
+              const errorExamples = {};
+              
+              msg.errors.forEach(error => {
+                const category = error.message.split(':')[0] || error.message.split(' ')[0] || 'Other';
+                errorCategories[category] = (errorCategories[category] || 0) + 1;
+                if (!errorExamples[category] && error.message.length < 100) {
+                  errorExamples[category] = error.message;
+                }
+              });
+              
+              const categoryList = Object.entries(errorCategories)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(([cat, count]) => `${cat} (${count})`)
+                .join(', ');
+              
+              metaMessage = `${errorCount} ${errorCount === 1 ? 'error' : 'errors'}: ${categoryList}`;
+              
+              if (Object.keys(errorCategories).length > 5) {
+                metaMessage += `, ...`;
+              }
+            }
+            
+            if (msg.metadata) {
+              const typeBreakdown = {};
+              msg.tokens.forEach(token => {
+                typeBreakdown[token.type] = (typeBreakdown[token.type] || 0) + 1;
+              });
+              
+              const typeSummary = Object.entries(typeBreakdown)
+                .map(([type, count]) => `${count} ${type}`)
+                .join(', ');
+              
+              if (typeSummary) {
+                metaMessage = metaMessage 
+                  ? `${metaMessage} • Types: ${typeSummary}`
+                  : `Types: ${typeSummary}`;
+              }
+            }
+            
+            showResult(resultMessage, metaMessage, errorCount > 0 ? 'warning' : 'success');
+            
+            // Display tokens in a structured format
+            const tokensDisplay = {
+              summary: {
+                total: tokenCount,
+                byType: msg.tokens.reduce((acc, token) => {
+                  acc[token.type] = (acc[token.type] || 0) + 1;
+                  return acc;
+                }, {}),
+                errors: errorCount
+              },
+              tokens: msg.tokens.map(token => ({
+                name: token.name,
+                path: token.path.join('.'),
+                type: token.type,
+                value: token.value,
+                description: token.description
+              })),
+              errors: msg.errors || []
+            };
+            
+            showTokens(JSON.stringify(tokensDisplay, null, 2));
+          } else {
+            // Fallback for old format (backward compatibility)
+            showResult('Tokens retrieved successfully', null, 'success');
+            showTokens(JSON.stringify(msg.contents || msg, null, 2));
+          }
+        } else {
+          showResult('Failed to fetch tokens', msg.error || 'Unknown error', 'error');
+        }
+      }
+
+      if (msg.type === 'scan-progress') {
+        showResult(msg.message, null, 'success');
+      }
+
+      if (msg.type === 'scan-token-result') {
+        scanBtn.disabled = false;
+        setLoading(scanBtnText, false, 'Scan');
+        
+        if (msg.success) {
+          if (msg.tokenFound) {
+            const componentCount = msg.matchingComponents ? msg.matchingComponents.length : 0;
+            let resultMessage = `Token "${msg.tokenName}" found`;
+            let metaMessage = `Used in ${componentCount} component${componentCount === 1 ? '' : 's'}`;
+            
+            if (msg.tokenValue) {
+              metaMessage += ` • Value: ${JSON.stringify(msg.tokenValue)}`;
+            }
+            
+            showResult(resultMessage, metaMessage, 'success');
+            
+            // Show token results with nice UI
+            showTokenResults(msg.tokenName, msg.tokenValue, msg.matchingComponents);
+          } else {
+            showResult(`Token "${msg.tokenName}" not found`, 'The token does not exist in the fetched tokens', 'error');
+          }
+        } else {
+          showResult('Scan failed', msg.error || 'Unknown error', 'error');
+        }
+      }
+      
+      if (msg.type === 'scan-result') {
+        // Legacy handler for old scan-components messages (keep for compatibility)
+        scanBtn.disabled = false;
+        setLoading(scanBtnText, false, 'Scan');
+        
+        if (msg.success) {
+          const result = msg.result;
+          const componentCount = result.totalComponents;
+          const instanceCount = result.totalInstances;
+          const pagesScanned = result.pagesScanned;
+          const errorCount = result.errors ? result.errors.length : 0;
+          
+          let resultMessage = `Found ${componentCount} component${componentCount === 1 ? '' : 's'}`;
+          let metaMessage = `${instanceCount} instance${instanceCount === 1 ? '' : 's'} across ${pagesScanned} page${pagesScanned === 1 ? '' : 's'}`;
+          
+          if (errorCount > 0) {
+            metaMessage += ` • ${errorCount} error${errorCount === 1 ? '' : 's'}`;
+          }
+          
+          showResult(resultMessage, metaMessage, errorCount > 0 ? 'warning' : 'success');
+          
+          // Display component summary
+          const componentsSummary = {
+            summary: {
+              totalComponents: componentCount,
+              totalInstances: instanceCount,
+              pagesScanned: pagesScanned,
+              errors: errorCount
+            },
+            components: result.components.map(comp => ({
+              id: comp.id,
+              name: comp.name,
+              type: comp.type,
+              page: comp.pageName,
+              colors: comp.colors.length,
+              typography: comp.typography.length,
+              spacing: comp.spacing.length,
+              effects: comp.effects.length
+            })),
+            errors: result.errors || []
+          };
+          
+          showComponents(JSON.stringify(componentsSummary, null, 2));
+        } else {
+          showResult('Failed to scan components', msg.error || 'Unknown error', 'error');
+        }
+      }
+    };
+
+    // Component scanning handlers
+    // Old scan button handlers removed - using scanBtn now
+  </script>
+</body>
+</html>
