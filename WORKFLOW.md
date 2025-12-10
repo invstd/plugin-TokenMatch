@@ -59,3 +59,4 @@ git pull
 - Test in Figma before pushing
 - Pull before pushing if others are working on the repo: `git pull` then `git push`
 
+

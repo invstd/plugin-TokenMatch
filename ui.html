@@ -739,9 +739,10 @@
   </div>
 
   <script>
+    // DOM elements - declared at top level so they're accessible everywhere
     const mainView = document.getElementById('mainView');
     const settingsView = document.getElementById('settingsView');
-    const settingsIcon = document.getElementById('settingsIcon');
+    const settingsBtn = document.getElementById('settingsBtn');
     const backButton = document.getElementById('backButton');
     const repoUrlInput = document.getElementById('repoUrl');
     const tokenInput = document.getElementById('token');
@@ -765,6 +766,7 @@
     let currentTheme = 'dark';
     let selectedBranch = null;
     let branches = [];
+    let tokensFetched = false;
 
     // Detect initial theme from system preference
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
@@ -787,23 +789,69 @@
 
     // Theme toggle (both views)
     const toggleTheme = () => {
+      console.log('[UI] Theme toggle clicked');
       currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
       document.body.classList.toggle('light-theme');
     };
-    themeToggle.onclick = toggleTheme;
-    themeToggle2.onclick = toggleTheme;
+    
+    if (themeToggle) {
+      themeToggle.onclick = toggleTheme;
+      console.log('[UI] Theme toggle handler attached');
+    } else {
+      console.error('[UI] Theme toggle button not found');
+    }
+    
+    if (themeToggle2) {
+      themeToggle2.onclick = toggleTheme;
+    }
 
     // Navigation between views
-    settingsBtn.onclick = () => {
-      mainView.classList.add('hidden');
-      settingsView.classList.remove('hidden');
-    };
+    if (settingsBtn) {
+      settingsBtn.onclick = () => {
+        console.log('[UI] Opening settings');
+        if (mainView) mainView.classList.add('hidden');
+        if (settingsView) settingsView.classList.remove('hidden');
+      };
+    } else {
+      console.error('[UI] Settings button not found');
+    }
 
-    backButton.onclick = () => {
-      settingsView.classList.add('hidden');
-      mainView.classList.remove('hidden');
-    };
+    if (backButton) {
+      backButton.onclick = () => {
+        console.log('[UI] Closing settings');
+        if (settingsView) settingsView.classList.add('hidden');
+        if (mainView) mainView.classList.remove('hidden');
+      };
+    } else {
+      console.error('[UI] Back button not found');
+    }
 
+    // Function definitions (must be before they're called)
+    function updateScanButtonState() {
+      const tokenName = tokenNameInput ? tokenNameInput.value.trim() : '';
+      const hasTokenName = tokenName.length > 0;
+      if (scanBtn) {
+        scanBtn.disabled = !hasTokenName || !tokensFetched;
+        if (scanBtn.disabled) {
+          if (!tokensFetched) {
+            scanBtn.title = 'Please fetch tokens first';
+          } else if (!hasTokenName) {
+            scanBtn.title = 'Please enter a token name';
+          }
+        } else {
+          scanBtn.title = '';
+        }
+      }
+    }
+    
+    function updateMainHeader() {
+      if (mainHeader && selectedBranch) {
+        mainHeader.textContent = `Scan + ${selectedBranch}`;
+      } else if (mainHeader) {
+        mainHeader.textContent = 'Scan';
+      }
+    }
+    
     // Initialize UI state
     updateScanButtonState();
     updateMainHeader();
@@ -934,20 +982,20 @@
 
     // Test connection
     let connectionTimeoutId = null;
-    if (testConnectionBtn && repoUrlInput && tokenInput) {
-      testConnectionBtn.onclick = () => {
-        const repoUrl = repoUrlInput.value.trim();
-        const token = tokenInput.value.trim();
+    const handleTestConnection = () => {
+      console.log('[UI] Test connection button clicked');
+      const repoUrl = repoUrlInput ? repoUrlInput.value.trim() : '';
+      const token = tokenInput ? tokenInput.value.trim() : '';
 
-        if (!repoUrl) {
-          showResult('Please enter a repository URL', null, 'error');
-          return;
-        }
+      if (!repoUrl) {
+        showResult('Please enter a repository URL', null, 'error');
+        return;
+      }
 
-        if (!token) {
-          showResult('Please enter a personal access token', null, 'error');
-          return;
-        }
+      if (!token) {
+        showResult('Please enter a personal access token', null, 'error');
+        return;
+      }
 
       // Clear any existing timeout
       if (connectionTimeoutId) {
@@ -957,8 +1005,8 @@
 
       hideResult();
       hideTokens();
-      testConnectionBtn.disabled = true;
-      setLoading(testConnectionBtnText, true, 'Testing');
+      if (testConnectionBtn) testConnectionBtn.disabled = true;
+      if (testConnectionBtnText) setLoading(testConnectionBtnText, true, 'Testing');
       
       console.log('[UI] Sending test-connection message', { repoUrl, tokenLength: token.length });
 
@@ -974,23 +1022,31 @@
         console.log('[UI] Message sent successfully');
       } catch (error) {
         console.error('[UI] Error sending message:', error);
-        testConnectionBtn.disabled = false;
-        setLoading(testConnectionBtnText, false, 'Test Connection');
+        if (testConnectionBtn) testConnectionBtn.disabled = false;
+        if (testConnectionBtnText) setLoading(testConnectionBtnText, false, 'Test Connection');
         showResult('Failed to send message', error.message || 'Unknown error', 'error');
         return;
       }
       
       // Add a timeout fallback in case the message never comes back
       connectionTimeoutId = setTimeout(() => {
-        if (testConnectionBtn.disabled) {
+        if (testConnectionBtn && testConnectionBtn.disabled) {
           console.warn('[UI] Test connection timeout - re-enabling button');
           testConnectionBtn.disabled = false;
-          setLoading(testConnectionBtnText, false, 'Test Connection');
+          if (testConnectionBtnText) setLoading(testConnectionBtnText, false, 'Test Connection');
           showResult('Connection timeout', 'The request took too long. Please check your internet connection and try again.', 'error');
           connectionTimeoutId = null;
         }
       }, 15000); // 15 second timeout
     };
+    
+    if (testConnectionBtn) {
+      console.log('[UI] Attaching test connection handler');
+      testConnectionBtn.onclick = handleTestConnection;
+      testConnectionBtn.addEventListener('click', handleTestConnection, true);
+    } else {
+      console.error('[UI] Test connection button not found!');
+    }
 
     // Branch selector
     branchSelect.onclick = (e) => {
@@ -1049,26 +1105,6 @@
       }
     }
 
-    function updateScanButtonState() {
-      const hasTokenName = tokenNameInput.value.trim() !== '';
-      scanBtn.disabled = !hasTokenName || !tokensFetched;
-      
-      if (!tokensFetched) {
-        scanBtn.title = 'Fetch tokens first';
-      } else if (!hasTokenName) {
-        scanBtn.title = 'Enter a token name';
-      } else {
-        scanBtn.title = '';
-      }
-    }
-    
-    function updateMainHeader() {
-      if (selectedBranch) {
-        mainHeader.textContent = `Scan + ${selectedBranch}`;
-      } else {
-        mainHeader.textContent = 'Scan';
-      }
-    }
 
     // Save configuration
     saveConfigBtn.onclick = () => {
@@ -1474,6 +1510,68 @@
 
     // Component scanning handlers
     // Old scan button handlers removed - using scanBtn now
+    
+    // Verify initialization
+    console.log('[UI] Plugin UI initialized successfully');
+    console.log('[UI] Settings button available:', !!settingsBtn);
+    console.log('[UI] Theme toggle available:', !!themeToggle);
+    console.log('[UI] Main view available:', !!mainView);
+    console.log('[UI] Settings view available:', !!settingsView);
+    
+    // Add event listeners as fallback (in addition to onclick handlers)
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', (e) => {
+        console.log('[UI] Settings button clicked (addEventListener)');
+        e.preventDefault();
+        e.stopPropagation();
+        if (mainView) mainView.classList.add('hidden');
+        if (settingsView) settingsView.classList.remove('hidden');
+      }, true);
+    }
+    
+    if (themeToggle) {
+      themeToggle.addEventListener('click', (e) => {
+        console.log('[UI] Theme toggle clicked (addEventListener)');
+        e.preventDefault();
+        e.stopPropagation();
+        toggleTheme();
+      }, true);
+    }
+    
+    if (themeToggle2) {
+      themeToggle2.addEventListener('click', (e) => {
+        console.log('[UI] Theme toggle 2 clicked (addEventListener)');
+        e.preventDefault();
+        e.stopPropagation();
+        toggleTheme();
+      }, true);
+    }
+    
+    if (backButton) {
+      backButton.addEventListener('click', (e) => {
+        console.log('[UI] Back button clicked (addEventListener)');
+        e.preventDefault();
+        e.stopPropagation();
+        if (settingsView) settingsView.classList.add('hidden');
+        if (mainView) mainView.classList.remove('hidden');
+      }, true);
+    }
+    
+    // Test: Try clicking programmatically to verify elements exist
+    setTimeout(() => {
+      console.log('[UI] Testing element accessibility...');
+      if (themeToggle) {
+        console.log('[UI] Theme toggle:', {
+          element: themeToggle,
+          onclick: themeToggle.onclick,
+          disabled: themeToggle.disabled,
+          style: window.getComputedStyle(themeToggle).pointerEvents
+        });
+      }
+    }, 100);
+    
+    // Initialize UI - ensure all handlers are attached
+    console.log('[UI] All event handlers attached');
   </script>
 </body>
 </html>
