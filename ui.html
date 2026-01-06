@@ -392,84 +392,6 @@
       display: none;
     }
 
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--border-primary);
-    }
-
-    .header h2 {
-      margin: 0;
-    }
-
-    .settings-icon {
-      width: 20px;
-      height: 20px;
-      cursor: pointer;
-      padding: 6px;
-      border-radius: 4px;
-      transition: background-color 0.15s ease;
-      color: var(--text-secondary);
-    }
-
-    .settings-icon:hover {
-      background-color: var(--bg-tertiary);
-      color: var(--text-primary);
-    }
-
-    .settings-icon svg {
-      width: 100%;
-      height: 100%;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-
-    .page-view {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
-
-    .page-view.hidden {
-      display: none;
-    }
-
-    .back-button {
-      background: none;
-      border: none;
-      color: var(--text-secondary);
-      cursor: pointer;
-      padding: 6px 8px;
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      transition: all 0.15s ease;
-      margin-bottom: 16px;
-    }
-
-    .back-button:hover {
-      background-color: var(--bg-tertiary);
-      color: var(--text-primary);
-    }
-
-    .back-button svg {
-      width: 16px;
-      height: 16px;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-
     .spinner {
       display: inline-block;
       width: 13px;
@@ -495,108 +417,6 @@
       margin-top: 12px;
       max-height: 300px;
       overflow-y: auto;
-    }
-
-    .token-details {
-      background-color: var(--bg-secondary);
-      border: 1px solid var(--border-primary);
-      border-radius: 6px;
-      padding: 16px;
-      margin-top: 12px;
-    }
-
-    .token-details-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-
-    .token-details-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .token-details-value {
-      font-size: 12px;
-      color: var(--text-secondary);
-      background-color: var(--bg-tertiary);
-      padding: 6px 10px;
-      border-radius: 4px;
-      font-family: monospace;
-      margin-top: 8px;
-      word-break: break-all;
-    }
-
-    .components-list {
-      margin-top: 16px;
-    }
-
-    .components-list-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .component-item {
-      background-color: var(--bg-tertiary);
-      border: 1px solid var(--border-primary);
-      border-radius: 6px;
-      padding: 12px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-
-    .component-item:hover {
-      background-color: var(--bg-secondary);
-      border-color: var(--border-secondary);
-    }
-
-    .component-item-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-
-    .component-item-name {
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--text-primary);
-    }
-
-    .component-item-page {
-      font-size: 11px;
-      color: var(--text-tertiary);
-    }
-
-    .component-item-properties {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 8px;
-    }
-
-    .property-badge {
-      font-size: 10px;
-      padding: 4px 8px;
-      border-radius: 4px;
-      background-color: var(--accent-bg);
-      color: var(--accent-text);
-      font-weight: 500;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 24px;
-      color: var(--text-tertiary);
-      font-size: 12px;
-    }
       font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
       font-size: 11px;
       color: var(--text-primary);
@@ -624,126 +444,70 @@
   </style>
 </head>
 <body>
-  <!-- Main View -->
-  <div id="mainView" class="page-view">
-    <div class="content-wrapper">
-      <div class="header">
-        <h2 id="mainHeader">Scan</h2>
-        <button id="settingsBtn" class="btn-secondary" style="padding: 6px 12px; font-size: 12px;">
-          Settings
-        </button>
-      </div>
-      
-      <div class="section">
-        <button id="fetchTokensBtn" class="btn-secondary" style="margin-bottom: 16px;">
-          <span id="fetchTokensBtnText">Fetch Tokens</span>
-        </button>
-        <div class="label-hint" style="margin-top: -8px; margin-bottom: 16px; font-size: 11px; color: var(--text-tertiary);">
-          Fetch tokens from your GitHub repository first
-        </div>
-      </div>
-
-      <div class="section">
-        <label for="tokenNameInput">
-          Token Name
-          <span class="label-hint">Enter the name of the token to search for</span>
-        </label>
-        <input type="text" id="tokenNameInput" placeholder="e.g., color.primary.500" />
-      </div>
-
-      <div class="section">
-        <button id="scanBtn" class="btn-primary" disabled>
-          <span id="scanBtnText">Scan</span>
-        </button>
-      </div>
-
-      <div id="resultDisplay" class="result hidden"></div>
-      <div id="tokensDisplay" class="tokens-display hidden"></div>
-      <div id="componentsDisplay" class="tokens-display hidden"></div>
-      <div id="tokenDetailsDisplay" class="token-details hidden"></div>
-      <div id="componentsListDisplay" class="components-list hidden"></div>
-    </div>
+  <div class="content-wrapper">
+    <h2>TokenMatch</h2>
     
-    <div class="footer">
-      <div class="version-info">TokenMatch v1.0.0</div>
-      <button class="theme-toggle" id="themeToggle">Toggle Theme</button>
+    <div class="section">
+      <label for="repoUrl">
+        Repository URL
+        <span class="label-hint">e.g., https://github.com/owner/repo</span>
+      </label>
+      <input type="text" id="repoUrl" placeholder="https://github.com/owner/repo" />
     </div>
-  </div>
 
-  <!-- Settings View -->
-  <div id="settingsView" class="page-view hidden">
-    <div class="content-wrapper">
-      <button class="back-button" id="backButton" title="Back to main">
-        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <polyline points="15 18 9 12 15 6"></polyline>
-        </svg>
-        Back
-      </button>
-      
-      <div class="header">
-        <h2>GitHub Settings</h2>
-      </div>
+    <div class="section">
+      <label for="token">
+        Personal Access Token
+        <span class="label-hint">GitHub token with repo access</span>
+      </label>
+      <input type="password" id="token" placeholder="ghp_xxxxxxxxxxxx" />
+    </div>
 
-      <div class="section">
-        <label for="repoUrl">
-          Repository URL
-          <span class="label-hint">e.g., https://github.com/owner/repo</span>
-        </label>
-        <input type="text" id="repoUrl" placeholder="https://github.com/owner/repo" />
-      </div>
+    <button id="testConnectionBtn" class="btn-secondary">
+      <span id="testConnectionBtnText">Test Connection</span>
+    </button>
 
-      <div class="section">
-        <label for="token">
-          Personal Access Token
-          <span class="label-hint">GitHub token with repo access</span>
-        </label>
-        <input type="password" id="token" placeholder="ghp_xxxxxxxxxxxx" />
-      </div>
-
-      <button id="testConnectionBtn" class="btn-secondary">
-        <span id="testConnectionBtnText">Test Connection</span>
-      </button>
-
-      <div class="section">
-        <label for="branchSelect">Branch</label>
-        <div class="select-wrapper">
-          <div class="custom-select" id="branchSelect" disabled>
-            <span id="branchSelectText">Connect to repository first</span>
-            <div class="select-arrow">
-              <svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">
-                <polyline points="2,4 6,8 10,4"></polyline>
-              </svg>
-            </div>
+    <div class="section">
+      <label for="branchSelect">Branch</label>
+      <div class="select-wrapper">
+        <div class="custom-select" id="branchSelect" disabled>
+          <span id="branchSelectText">Connect to repository first</span>
+          <div class="select-arrow">
+            <svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">
+              <polyline points="2,4 6,8 10,4"></polyline>
+            </svg>
           </div>
-          <div class="select-dropdown hidden" id="branchDropdown"></div>
         </div>
+        <div class="select-dropdown hidden" id="branchDropdown"></div>
       </div>
-
-      <div class="section">
-        <label for="filePath">
-          File or Directory Path
-          <span class="label-hint">Leave empty to fetch all token files, or specify a file/directory path</span>
-        </label>
-        <input type="text" id="filePath" placeholder="tokens.json or tokens/ or leave empty" />
-      </div>
-
-      <button id="saveConfigBtn" class="btn-primary">
-        <span id="saveConfigBtnText">Save Configuration</span>
-      </button>
     </div>
-    
-    <div class="footer">
-      <div class="version-info">TokenMatch v1.0.0</div>
-      <button class="theme-toggle" id="themeToggle2">Toggle Theme</button>
+
+    <div class="section">
+      <label for="filePath">
+        File Path
+        <span class="label-hint">Path to tokens file (e.g., tokens.json or tokens/colors.json)</span>
+      </label>
+      <input type="text" id="filePath" placeholder="tokens.json" />
     </div>
+
+    <button id="saveConfigBtn" class="btn-primary">
+      <span id="saveConfigBtnText">Save Configuration</span>
+    </button>
+
+    <button id="fetchTokensBtn" class="btn-primary" disabled>
+      <span id="fetchTokensBtnText">Fetch Tokens</span>
+    </button>
+
+    <div id="resultDisplay" class="result hidden"></div>
+    <div id="tokensDisplay" class="tokens-display hidden"></div>
+  </div>
+  
+  <div class="footer">
+    <div class="version-info">TokenMatch v1.0.0</div>
+    <button class="theme-toggle" id="themeToggle">Toggle Theme</button>
   </div>
 
   <script>
-    // DOM elements - declared at top level so they're accessible everywhere
-    const mainView = document.getElementById('mainView');
-    const settingsView = document.getElementById('settingsView');
-    const settingsBtn = document.getElementById('settingsBtn');
-    const backButton = document.getElementById('backButton');
     const repoUrlInput = document.getElementById('repoUrl');
     const tokenInput = document.getElementById('token');
     const testConnectionBtn = document.getElementById('testConnectionBtn');
@@ -754,19 +518,15 @@
     const filePathInput = document.getElementById('filePath');
     const saveConfigBtn = document.getElementById('saveConfigBtn');
     const saveConfigBtnText = document.getElementById('saveConfigBtnText');
-    // Old button references removed - using scanBtn now
+    const fetchTokensBtn = document.getElementById('fetchTokensBtn');
+    const fetchTokensBtnText = document.getElementById('fetchTokensBtnText');
     const resultDisplay = document.getElementById('resultDisplay');
     const tokensDisplay = document.getElementById('tokensDisplay');
-    const componentsDisplay = document.getElementById('componentsDisplay');
-    const tokenDetailsDisplay = document.getElementById('tokenDetailsDisplay');
-    const componentsListDisplay = document.getElementById('componentsListDisplay');
     const themeToggle = document.getElementById('themeToggle');
-    const themeToggle2 = document.getElementById('themeToggle2');
 
     let currentTheme = 'dark';
     let selectedBranch = null;
     let branches = [];
-    let tokensFetched = false;
 
     // Detect initial theme from system preference
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
@@ -787,85 +547,14 @@
       });
     }
 
-    // Theme toggle (both views)
-    const toggleTheme = () => {
-      console.log('[UI] Theme toggle clicked');
+    // Theme toggle
+    themeToggle.onclick = () => {
       currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
       document.body.classList.toggle('light-theme');
     };
-    
-    if (themeToggle) {
-      themeToggle.onclick = toggleTheme;
-      console.log('[UI] Theme toggle handler attached');
-    } else {
-      console.error('[UI] Theme toggle button not found');
-    }
-    
-    if (themeToggle2) {
-      themeToggle2.onclick = toggleTheme;
-    }
 
-    // Navigation between views
-    if (settingsBtn) {
-      settingsBtn.onclick = () => {
-        console.log('[UI] Opening settings');
-        if (mainView) mainView.classList.add('hidden');
-        if (settingsView) settingsView.classList.remove('hidden');
-      };
-    } else {
-      console.error('[UI] Settings button not found');
-    }
-
-    if (backButton) {
-      backButton.onclick = () => {
-        console.log('[UI] Closing settings');
-        if (settingsView) settingsView.classList.add('hidden');
-        if (mainView) mainView.classList.remove('hidden');
-      };
-    } else {
-      console.error('[UI] Back button not found');
-    }
-
-    // Function definitions (must be before they're called)
-    function updateScanButtonState() {
-      const tokenName = tokenNameInput ? tokenNameInput.value.trim() : '';
-      const hasTokenName = tokenName.length > 0;
-      if (scanBtn) {
-        scanBtn.disabled = !hasTokenName || !tokensFetched;
-        if (scanBtn.disabled) {
-          if (!tokensFetched) {
-            scanBtn.title = 'Please fetch tokens first';
-          } else if (!hasTokenName) {
-            scanBtn.title = 'Please enter a token name';
-          }
-        } else {
-          scanBtn.title = '';
-        }
-      }
-    }
-    
-    function updateMainHeader() {
-      if (mainHeader && selectedBranch) {
-        mainHeader.textContent = `Scan + ${selectedBranch}`;
-      } else if (mainHeader) {
-        mainHeader.textContent = 'Scan';
-      }
-    }
-    
-    // Initialize UI state
-    updateScanButtonState();
-    updateMainHeader();
-    
-    // Verify message handler is set up
-    console.log('[UI] Message handler initialized');
-    
     // Load saved configuration on startup
-    try {
-      parent.postMessage({ pluginMessage: { type: 'load-config' } }, '*');
-      console.log('[UI] Load config message sent');
-    } catch (error) {
-      console.error('[UI] Error sending load-config message:', error);
-    }
+    parent.postMessage({ pluginMessage: { type: 'load-config' } }, '*');
 
     function setLoading(buttonText, isLoading, text = '') {
       if (isLoading) {
@@ -891,101 +580,16 @@
     function showTokens(content) {
       tokensDisplay.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
       tokensDisplay.classList.remove('hidden');
-      componentsDisplay.classList.add('hidden');
     }
 
     function hideTokens() {
       tokensDisplay.classList.add('hidden');
     }
 
-    function showComponents(content) {
-      // Legacy: show raw JSON for old format
-      componentsDisplay.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
-      componentsDisplay.classList.remove('hidden');
-      tokensDisplay.classList.add('hidden');
-    }
-
-    function hideComponents() {
-      componentsDisplay.classList.add('hidden');
-      tokenDetailsDisplay.classList.add('hidden');
-      componentsListDisplay.classList.add('hidden');
-    }
-
-    function showTokenResults(tokenName, tokenValue, matchingComponents) {
-      // Hide old displays
-      componentsDisplay.classList.add('hidden');
-      tokensDisplay.classList.add('hidden');
-      
-      // Show token details
-      const tokenValueStr = typeof tokenValue === 'object' 
-        ? JSON.stringify(tokenValue, null, 2)
-        : String(tokenValue);
-      
-      tokenDetailsDisplay.innerHTML = `
-        <div class="token-details-header">
-          <div class="token-details-title">Token: ${escapeHtml(tokenName)}</div>
-        </div>
-        <div class="token-details-value">${escapeHtml(tokenValueStr)}</div>
-      `;
-      tokenDetailsDisplay.classList.remove('hidden');
-      
-      // Show components list
-      if (matchingComponents && matchingComponents.length > 0) {
-        let componentsHtml = '<div class="components-list-title">Matching Components (' + matchingComponents.length + ')</div>';
-        
-        matchingComponents.forEach(component => {
-          const propertiesHtml = component.matchedProperties
-            ? component.matchedProperties.map(prop => 
-                `<span class="property-badge">${escapeHtml(prop)}</span>`
-              ).join('')
-            : '';
-          
-          componentsHtml += `
-            <div class="component-item" data-component-id="${escapeHtml(component.id)}">
-              <div class="component-item-header">
-                <div class="component-item-name">${escapeHtml(component.name)}</div>
-                <div class="component-item-page">${escapeHtml(component.page)}</div>
-              </div>
-              ${propertiesHtml ? `<div class="component-item-properties">${propertiesHtml}</div>` : ''}
-            </div>
-          `;
-        });
-        
-        componentsListDisplay.innerHTML = componentsHtml;
-        componentsListDisplay.classList.remove('hidden');
-        
-        // Add click handlers for component navigation
-        componentsListDisplay.querySelectorAll('.component-item').forEach(item => {
-          item.addEventListener('click', () => {
-            const componentId = item.getAttribute('data-component-id');
-            if (componentId) {
-              parent.postMessage({
-                pluginMessage: {
-                  type: 'navigate-to-component',
-                  componentId: componentId
-                }
-              }, '*');
-            }
-          });
-        });
-      } else {
-        componentsListDisplay.innerHTML = '<div class="empty-state">No components found using this token</div>';
-        componentsListDisplay.classList.remove('hidden');
-      }
-    }
-
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
     // Test connection
-    let connectionTimeoutId = null;
-    const handleTestConnection = () => {
-      console.log('[UI] Test connection button clicked');
-      const repoUrl = repoUrlInput ? repoUrlInput.value.trim() : '';
-      const token = tokenInput ? tokenInput.value.trim() : '';
+    testConnectionBtn.onclick = () => {
+      const repoUrl = repoUrlInput.value.trim();
+      const token = tokenInput.value.trim();
 
       if (!repoUrl) {
         showResult('Please enter a repository URL', null, 'error');
@@ -997,56 +601,19 @@
         return;
       }
 
-      // Clear any existing timeout
-      if (connectionTimeoutId) {
-        clearTimeout(connectionTimeoutId);
-        connectionTimeoutId = null;
-      }
-
       hideResult();
       hideTokens();
-      if (testConnectionBtn) testConnectionBtn.disabled = true;
-      if (testConnectionBtnText) setLoading(testConnectionBtnText, true, 'Testing');
-      
-      console.log('[UI] Sending test-connection message', { repoUrl, tokenLength: token.length });
+      testConnectionBtn.disabled = true;
+      setLoading(testConnectionBtnText, true, 'Testing');
 
-      try {
-        parent.postMessage({
-          pluginMessage: {
-            type: 'test-connection',
-            repoUrl: repoUrl,
-            token: token
-          }
-        }, '*');
-        
-        console.log('[UI] Message sent successfully');
-      } catch (error) {
-        console.error('[UI] Error sending message:', error);
-        if (testConnectionBtn) testConnectionBtn.disabled = false;
-        if (testConnectionBtnText) setLoading(testConnectionBtnText, false, 'Test Connection');
-        showResult('Failed to send message', error.message || 'Unknown error', 'error');
-        return;
-      }
-      
-      // Add a timeout fallback in case the message never comes back
-      connectionTimeoutId = setTimeout(() => {
-        if (testConnectionBtn && testConnectionBtn.disabled) {
-          console.warn('[UI] Test connection timeout - re-enabling button');
-          testConnectionBtn.disabled = false;
-          if (testConnectionBtnText) setLoading(testConnectionBtnText, false, 'Test Connection');
-          showResult('Connection timeout', 'The request took too long. Please check your internet connection and try again.', 'error');
-          connectionTimeoutId = null;
+      parent.postMessage({
+        pluginMessage: {
+          type: 'test-connection',
+          repoUrl: repoUrl,
+          token: token
         }
-      }, 15000); // 15 second timeout
+      }, '*');
     };
-    
-    if (testConnectionBtn) {
-      console.log('[UI] Attaching test connection handler');
-      testConnectionBtn.onclick = handleTestConnection;
-      testConnectionBtn.addEventListener('click', handleTestConnection, true);
-    } else {
-      console.error('[UI] Test connection button not found!');
-    }
 
     // Branch selector
     branchSelect.onclick = (e) => {
@@ -1057,8 +624,8 @@
     };
 
     document.addEventListener('click', () => {
-        branchSelect.classList.remove('open');
-        branchDropdown.classList.add('hidden');
+      branchSelect.classList.remove('open');
+      branchDropdown.classList.add('hidden');
     });
 
     function updateBranchSelector(branchList) {
@@ -1093,7 +660,8 @@
           });
           option.classList.add('selected');
           
-          updateMainHeader();
+          // Enable fetch button if all required fields are filled
+          updateFetchButtonState();
         };
         branchDropdown.appendChild(option);
       });
@@ -1105,16 +673,24 @@
       }
     }
 
+    function updateFetchButtonState() {
+      const hasRepo = repoUrlInput.value.trim() !== '';
+      const hasToken = tokenInput.value.trim() !== '';
+      const hasBranch = selectedBranch !== null;
+      const hasPath = filePathInput.value.trim() !== '';
+      
+      fetchTokensBtn.disabled = !(hasRepo && hasToken && hasBranch && hasPath);
+    }
 
     // Save configuration
     saveConfigBtn.onclick = () => {
       const repoUrl = repoUrlInput.value.trim();
       const token = tokenInput.value.trim();
       const branch = selectedBranch;
-      const filePath = filePathInput.value.trim(); // Can be empty
+      const filePath = filePathInput.value.trim();
 
-      if (!repoUrl || !token || !branch) {
-        showResult('Please fill in repository URL, token, and select a branch', null, 'error');
+      if (!repoUrl || !token || !branch || !filePath) {
+        showResult('Please fill in all fields before saving', null, 'error');
         return;
       }
 
@@ -1133,96 +709,35 @@
       }, '*');
     };
 
-    // Fetch tokens button (main view) - uses saved config
-    if (fetchTokensBtn && fetchTokensBtnText) {
-      fetchTokensBtn.onclick = () => {
-        // Try to get config from settings inputs if available
-        let repoUrl = '';
-        let token = '';
-        let branch = null;
-        let filePath = '';
-        
-        if (repoUrlInput && repoUrlInput.value.trim()) {
-          repoUrl = repoUrlInput.value.trim();
-        }
-        if (tokenInput && tokenInput.value.trim()) {
-          token = tokenInput.value.trim();
-        }
-        if (selectedBranch) {
-          branch = selectedBranch;
-        }
-        if (filePathInput && filePathInput.value.trim()) {
-          filePath = filePathInput.value.trim();
-        }
-        
-        // If not available, request saved config
-        if (!repoUrl || !token || !branch) {
-          parent.postMessage({
-            pluginMessage: {
-              type: 'load-config'
-            }
-          }, '*');
-          
-          // Wait for config to load
-          setTimeout(() => {
-            if (window.savedConfig) {
-              repoUrl = window.savedConfig.repoUrl || '';
-              token = window.savedConfig.token || '';
-              branch = window.savedConfig.branch || null;
-              filePath = window.savedConfig.filePath || '';
-            }
-            
-            if (!repoUrl || !token || !branch) {
-              showResult('Please configure GitHub settings first', 'Go to Settings to set up your repository connection', 'error');
-              return;
-            }
+    // Fetch tokens
+    fetchTokensBtn.onclick = () => {
+      const repoUrl = repoUrlInput.value.trim();
+      const token = tokenInput.value.trim();
+      const branch = selectedBranch;
+      const filePath = filePathInput.value.trim();
 
-            hideResult();
-            hideTokens();
-            fetchTokensBtn.disabled = true;
-            setLoading(fetchTokensBtnText, true, 'Fetching');
-
-            parent.postMessage({
-              pluginMessage: {
-                type: 'fetch-tokens',
-                repoUrl: repoUrl,
-                token: token,
-                branch: branch,
-                filePath: filePath
-              }
-            }, '*');
-          }, 300);
-          return;
-        }
-
-        hideResult();
-        hideTokens();
-        fetchTokensBtn.disabled = true;
-        setLoading(fetchTokensBtnText, true, 'Fetching');
-
-        parent.postMessage({
-          pluginMessage: {
-            type: 'fetch-tokens',
-            repoUrl: repoUrl,
-            token: token,
-            branch: branch,
-            filePath: filePath
-          }
-        }, '*');
-      };
-    }
-
-    // Settings page still uses updateFetchButtonState for fetch button
-    function updateFetchButtonState() {
-      const hasRepo = repoUrlInput.value.trim() !== '';
-      const hasToken = tokenInput.value.trim() !== '';
-      const hasBranch = selectedBranch !== null;
-      const fetchTokensBtn = document.getElementById('fetchTokensBtn');
-      if (fetchTokensBtn) {
-        fetchTokensBtn.disabled = !(hasRepo && hasToken && hasBranch);
+      if (!repoUrl || !token || !branch || !filePath) {
+        showResult('Please fill in all required fields', null, 'error');
+        return;
       }
-    }
-    
+
+      hideResult();
+      hideTokens();
+      fetchTokensBtn.disabled = true;
+      setLoading(fetchTokensBtnText, true, 'Fetching');
+
+      parent.postMessage({
+        pluginMessage: {
+          type: 'fetch-tokens',
+          repoUrl: repoUrl,
+          token: token,
+          branch: branch,
+          filePath: filePath
+        }
+      }, '*');
+    };
+
+    // Update fetch button state on input changes
     repoUrlInput.addEventListener('input', updateFetchButtonState);
     tokenInput.addEventListener('input', updateFetchButtonState);
     filePathInput.addEventListener('input', updateFetchButtonState);
@@ -1234,11 +749,7 @@
           if (input === repoUrlInput || input === tokenInput) {
             testConnectionBtn.click();
           } else {
-            // Only click fetch button if it exists
-            const fetchBtn = document.getElementById('fetchTokensBtn');
-            if (fetchBtn) {
-              fetchBtn.click();
-            }
+            fetchTokensBtn.click();
           }
         }
       });
@@ -1247,21 +758,20 @@
     // Listen for messages from plugin
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
-
+      
       if (msg.type === 'theme') {
         currentTheme = msg.theme;
         if (msg.theme === 'light') {
           document.body.classList.add('light-theme');
         }
       }
-
+      
       if (msg.type === 'config-loaded') {
         if (msg.config) {
           repoUrlInput.value = msg.config.repoUrl || '';
           tokenInput.value = msg.config.token || '';
           filePathInput.value = msg.config.filePath || '';
           selectedBranch = msg.config.branch || null;
-          updateMainHeader();
           
           // If we have a branch, try to test connection to populate branches
           if (msg.config.repoUrl && msg.config.token) {
@@ -1270,23 +780,15 @@
             branchSelectText.textContent = selectedBranch;
             branchSelect.disabled = false;
           }
+          
+          updateFetchButtonState();
         }
       }
-
+      
       if (msg.type === 'connection-result') {
-        console.log('[UI] Received connection-result:', msg);
+        testConnectionBtn.disabled = false;
+        setLoading(testConnectionBtnText, false, 'Test Connection');
         
-        // Clear timeout if response received
-        if (connectionTimeoutId) {
-          clearTimeout(connectionTimeoutId);
-          connectionTimeoutId = null;
-        }
-        
-        if (testConnectionBtn && testConnectionBtnText) {
-          testConnectionBtn.disabled = false;
-          setLoading(testConnectionBtnText, false, 'Test Connection');
-        }
-
         if (msg.success) {
           updateBranchSelector(msg.branches);
           
@@ -1306,44 +808,25 @@
             `Found ${msg.branches.length} branch${msg.branches.length === 1 ? '' : 'es'}`,
             'success'
           );
-          updateMainHeader();
+          updateFetchButtonState();
         } else {
           showResult('Connection failed', msg.error || 'Unknown error', 'error');
-          if (branchSelect) branchSelect.disabled = true;
-          if (branchSelectText) branchSelectText.textContent = 'Connect to repository first';
+          branchSelect.disabled = true;
+          branchSelectText.textContent = 'Connect to repository first';
           branches = [];
         }
       }
-
+      
       if (msg.type === 'config-saved') {
         saveConfigBtn.disabled = false;
         setLoading(saveConfigBtnText, false, 'Save Configuration');
         showResult('Configuration saved successfully', null, 'success');
-        // Return to main view after saving
-        setTimeout(() => {
-          settingsView.classList.add('hidden');
-          mainView.classList.remove('hidden');
-        }, 1000);
       }
       
-      if (msg.type === 'fetch-progress') {
-        showResult(msg.message, null, 'success');
-      }
-
       if (msg.type === 'tokens-result') {
-        const fetchTokensBtn = document.getElementById('fetchTokensBtn');
-        const fetchTokensBtnText = document.getElementById('fetchTokensBtnText');
-        if (fetchTokensBtn && fetchTokensBtnText) {
-          fetchTokensBtn.disabled = false;
-          setLoading(fetchTokensBtnText, false, 'Fetch Tokens');
-        }
+        fetchTokensBtn.disabled = false;
+        setLoading(fetchTokensBtnText, false, 'Fetch Tokens');
         
-        // Mark tokens as fetched if successful
-        if (msg.success) {
-          tokensFetched = true;
-          updateScanButtonState();
-        }
-
         if (msg.success) {
           // New parsed tokens structure
           if (msg.tokens && Array.isArray(msg.tokens)) {
@@ -1354,29 +837,7 @@
             let metaMessage = null;
             
             if (errorCount > 0) {
-              // Categorize errors
-              const errorCategories = {};
-              const errorExamples = {};
-              
-              msg.errors.forEach(error => {
-                const category = error.message.split(':')[0] || error.message.split(' ')[0] || 'Other';
-                errorCategories[category] = (errorCategories[category] || 0) + 1;
-                if (!errorExamples[category] && error.message.length < 100) {
-                  errorExamples[category] = error.message;
-                }
-              });
-              
-              const categoryList = Object.entries(errorCategories)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 5)
-                .map(([cat, count]) => `${cat} (${count})`)
-                .join(', ');
-              
-              metaMessage = `${errorCount} ${errorCount === 1 ? 'error' : 'errors'}: ${categoryList}`;
-              
-              if (Object.keys(errorCategories).length > 5) {
-                metaMessage += `, ...`;
-              }
+              metaMessage = `${errorCount} validation ${errorCount === 1 ? 'error' : 'errors'} found`;
             }
             
             if (msg.metadata) {
@@ -1391,8 +852,8 @@
               
               if (typeSummary) {
                 metaMessage = metaMessage 
-                  ? `${metaMessage} • Types: ${typeSummary}`
-                  : `Types: ${typeSummary}`;
+                  ? `${metaMessage} • ${typeSummary}`
+                  : typeSummary;
               }
             }
             
@@ -1428,150 +889,7 @@
           showResult('Failed to fetch tokens', msg.error || 'Unknown error', 'error');
         }
       }
-
-      if (msg.type === 'scan-progress') {
-        showResult(msg.message, null, 'success');
-      }
-
-      if (msg.type === 'scan-token-result') {
-        scanBtn.disabled = false;
-        setLoading(scanBtnText, false, 'Scan');
-        
-        if (msg.success) {
-          if (msg.tokenFound) {
-            const componentCount = msg.matchingComponents ? msg.matchingComponents.length : 0;
-            let resultMessage = `Token "${msg.tokenName}" found`;
-            let metaMessage = `Used in ${componentCount} component${componentCount === 1 ? '' : 's'}`;
-            
-            if (msg.tokenValue) {
-              metaMessage += ` • Value: ${JSON.stringify(msg.tokenValue)}`;
-            }
-            
-            showResult(resultMessage, metaMessage, 'success');
-            
-            // Show token results with nice UI
-            showTokenResults(msg.tokenName, msg.tokenValue, msg.matchingComponents);
-          } else {
-            showResult(`Token "${msg.tokenName}" not found`, 'The token does not exist in the fetched tokens', 'error');
-          }
-        } else {
-          showResult('Scan failed', msg.error || 'Unknown error', 'error');
-        }
-      }
-      
-      if (msg.type === 'scan-result') {
-        // Legacy handler for old scan-components messages (keep for compatibility)
-        scanBtn.disabled = false;
-        setLoading(scanBtnText, false, 'Scan');
-        
-        if (msg.success) {
-          const result = msg.result;
-          const componentCount = result.totalComponents;
-          const instanceCount = result.totalInstances;
-          const pagesScanned = result.pagesScanned;
-          const errorCount = result.errors ? result.errors.length : 0;
-          
-          let resultMessage = `Found ${componentCount} component${componentCount === 1 ? '' : 's'}`;
-          let metaMessage = `${instanceCount} instance${instanceCount === 1 ? '' : 's'} across ${pagesScanned} page${pagesScanned === 1 ? '' : 's'}`;
-          
-          if (errorCount > 0) {
-            metaMessage += ` • ${errorCount} error${errorCount === 1 ? '' : 's'}`;
-          }
-          
-          showResult(resultMessage, metaMessage, errorCount > 0 ? 'warning' : 'success');
-          
-          // Display component summary
-          const componentsSummary = {
-            summary: {
-              totalComponents: componentCount,
-              totalInstances: instanceCount,
-              pagesScanned: pagesScanned,
-              errors: errorCount
-            },
-            components: result.components.map(comp => ({
-              id: comp.id,
-              name: comp.name,
-              type: comp.type,
-              page: comp.pageName,
-              colors: comp.colors.length,
-              typography: comp.typography.length,
-              spacing: comp.spacing.length,
-              effects: comp.effects.length
-            })),
-            errors: result.errors || []
-          };
-          
-          showComponents(JSON.stringify(componentsSummary, null, 2));
-        } else {
-          showResult('Failed to scan components', msg.error || 'Unknown error', 'error');
-        }
-      }
     };
-
-    // Component scanning handlers
-    // Old scan button handlers removed - using scanBtn now
-    
-    // Verify initialization
-    console.log('[UI] Plugin UI initialized successfully');
-    console.log('[UI] Settings button available:', !!settingsBtn);
-    console.log('[UI] Theme toggle available:', !!themeToggle);
-    console.log('[UI] Main view available:', !!mainView);
-    console.log('[UI] Settings view available:', !!settingsView);
-    
-    // Add event listeners as fallback (in addition to onclick handlers)
-    if (settingsBtn) {
-      settingsBtn.addEventListener('click', (e) => {
-        console.log('[UI] Settings button clicked (addEventListener)');
-        e.preventDefault();
-        e.stopPropagation();
-        if (mainView) mainView.classList.add('hidden');
-        if (settingsView) settingsView.classList.remove('hidden');
-      }, true);
-    }
-    
-    if (themeToggle) {
-      themeToggle.addEventListener('click', (e) => {
-        console.log('[UI] Theme toggle clicked (addEventListener)');
-        e.preventDefault();
-        e.stopPropagation();
-        toggleTheme();
-      }, true);
-    }
-    
-    if (themeToggle2) {
-      themeToggle2.addEventListener('click', (e) => {
-        console.log('[UI] Theme toggle 2 clicked (addEventListener)');
-        e.preventDefault();
-        e.stopPropagation();
-        toggleTheme();
-      }, true);
-    }
-    
-    if (backButton) {
-      backButton.addEventListener('click', (e) => {
-        console.log('[UI] Back button clicked (addEventListener)');
-        e.preventDefault();
-        e.stopPropagation();
-        if (settingsView) settingsView.classList.add('hidden');
-        if (mainView) mainView.classList.remove('hidden');
-      }, true);
-    }
-    
-    // Test: Try clicking programmatically to verify elements exist
-    setTimeout(() => {
-      console.log('[UI] Testing element accessibility...');
-      if (themeToggle) {
-        console.log('[UI] Theme toggle:', {
-          element: themeToggle,
-          onclick: themeToggle.onclick,
-          disabled: themeToggle.disabled,
-          style: window.getComputedStyle(themeToggle).pointerEvents
-        });
-      }
-    }, 100);
-    
-    // Initialize UI - ensure all handlers are attached
-    console.log('[UI] All event handlers attached');
   </script>
 </body>
 </html>

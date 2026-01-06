@@ -25,45 +25,14 @@ export class TokenParser {
     this.errors = [];
     this.tokenMap = new Map();
 
-    try {
-      // First pass: collect all tokens
-      console.log(`[TokenParser] Starting to collect tokens from ${filePath || 'root'}`);
-      console.log(`[TokenParser] Input structure:`, JSON.stringify(Object.keys(tokenFile || {})).substring(0, 200));
-      this.collectTokens(tokenFile, []);
-      console.log(`[TokenParser] Collected ${this.tokens.length} tokens`);
-      
-      if (this.tokens.length === 0) {
-        console.warn(`[TokenParser] No tokens found! File structure might not match expected format.`);
-        console.warn(`[TokenParser] Expected: Objects with $value or value property`);
-        console.warn(`[TokenParser] Sample of file structure:`, JSON.stringify(tokenFile).substring(0, 500));
-      }
+    // First pass: collect all tokens
+    this.collectTokens(tokenFile, []);
 
-      // Second pass: resolve aliases and references
-      console.log(`[TokenParser] Resolving aliases...`);
-      this.resolveAliases();
-      console.log(`[TokenParser] Alias resolution complete`);
+    // Second pass: resolve aliases and references
+    this.resolveAliases();
 
-      // Third pass: validate tokens
-      console.log(`[TokenParser] Validating tokens...`);
-      this.validateTokens();
-      
-      // Categorize errors for better reporting
-      const errorCategories: { [key: string]: number } = {};
-      for (const error of this.errors) {
-        const category = error.message.split(':')[0] || error.message;
-        errorCategories[category] = (errorCategories[category] || 0) + 1;
-      }
-      
-      console.log(`[TokenParser] Validation complete. ${this.errors.length} errors found:`);
-      console.log(`[TokenParser] Error breakdown:`, errorCategories);
-    } catch (error) {
-      console.error(`[TokenParser] Error parsing ${filePath}:`, error);
-      this.errors.push({
-        path: [],
-        message: `Parser error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        severity: 'error'
-      });
-    }
+    // Third pass: validate tokens
+    this.validateTokens();
 
     return {
       tokens: this.tokens,
@@ -77,79 +46,35 @@ export class TokenParser {
 
   /**
    * Collect all tokens from the token file structure
-   * @param maxDepth Maximum nesting depth to prevent stack overflow
    */
-  private collectTokens(obj: TokenFile | DesignToken, path: string[], maxDepth: number = 50, currentDepth: number = 0): void {
-    // Prevent infinite recursion from deeply nested structures
-    if (currentDepth >= maxDepth) {
-      this.errors.push({
-        path: path,
-        message: `Maximum nesting depth ${maxDepth} exceeded`,
-        severity: 'error'
-      });
-      return;
-    }
-
-    // Prevent circular references
-    if (path.length > 0) {
-      const pathStr = path.join('.');
-      if (path.length > 100) {
-        this.errors.push({
-          path: path,
-          message: 'Token path too long, possible circular reference',
-          severity: 'error'
-        });
-        return;
-      }
-    }
-
+  private collectTokens(obj: TokenFile | DesignToken, path: string[]): void {
     if (this.isDesignToken(obj)) {
-      // This is a token - support multiple formats
+      // This is a token
       const tokenName = path[path.length - 1] || 'unnamed';
-      
-      // Get value from either $value (W3C) or value (Style Dictionary)
-      const tokenValue = ('$value' in obj) ? (obj as any).$value : (obj as any).value;
       const tokenType = this.inferTokenType(obj, path);
       
       const parsedToken: ParsedToken = {
         name: tokenName,
-        value: tokenValue,
+        value: obj.$value,
         type: tokenType,
         path: [...path],
-        description: ('$description' in obj) ? (obj as any).$description : ((obj as any).description || undefined),
-        extensions: ('$extensions' in obj) ? (obj as any).$extensions : undefined,
-        rawValue: tokenValue
+        description: obj.$description,
+        extensions: obj.$extensions,
+        rawValue: obj.$value
       };
 
-      // Check for alias/reference (works with both formats)
-      if (typeof tokenValue === 'string' && tokenValue.startsWith('{')) {
-        parsedToken.aliases = this.extractAliases(tokenValue);
+      // Check for alias/reference
+      if (typeof obj.$value === 'string' && obj.$value.startsWith('{')) {
+        parsedToken.aliases = this.extractAliases(obj.$value);
       }
 
       this.tokens.push(parsedToken);
       this.tokenMap.set(path.join('.'), parsedToken);
-    } else if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+    } else {
       // This is a group, recurse
-      const keys = Object.keys(obj);
-      // Limit number of keys to prevent processing huge objects
-      if (keys.length > 1000) {
-        this.errors.push({
-          path: path,
-          message: `Object has too many keys (${keys.length}), skipping`,
-          severity: 'warning'
-        });
-        return;
-      }
-      
-      for (const key of keys) {
-        try {
-          this.collectTokens(obj[key] as TokenFile | DesignToken, [...path, key], maxDepth, currentDepth + 1);
-        } catch (error) {
-          this.errors.push({
-            path: [...path, key],
-            message: `Error processing key "${key}": ${error instanceof Error ? error.message : 'Unknown error'}`,
-            severity: 'error'
-          });
+      for (const key in obj) {
+        if (obj.hasOwnProperty(key)) {
+          this.collectTokens(obj[key] as TokenFile | DesignToken, [...path, key]);
         }
       }
     }
@@ -157,39 +82,18 @@ export class TokenParser {
 
   /**
    * Check if an object is a DesignToken
-   * Supports multiple formats:
-   * - W3C Design Tokens: { $value: ..., $type: ... }
-   * - Style Dictionary: { value: ..., type: ... }
-   * - Simple format: { value: ... }
    */
   private isDesignToken(obj: any): obj is DesignToken {
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
-      return false;
-    }
-    
-    // W3C Design Tokens format (with $value)
-    if ('$value' in obj) {
-      return true;
-    }
-    
-    // Style Dictionary or other formats (with value, no $)
-    if ('value' in obj) {
-      return true;
-    }
-    
-    return false;
+    return obj && typeof obj === 'object' && '$value' in obj;
   }
 
   /**
    * Infer token type from value or path
    */
-  private inferTokenType(token: any, path: string[]): TokenType {
-    // Use explicit type if provided (support both $type and type)
+  private inferTokenType(token: DesignToken, path: string[]): TokenType {
+    // Use explicit type if provided
     if (token.$type) {
       return token.$type;
-    }
-    if (token.type && typeof token.type === 'string') {
-      return token.type as TokenType;
     }
 
     // Infer from path
@@ -212,22 +116,8 @@ export class TokenParser {
       return 'border';
     }
 
-    // Infer from value (support both formats)
-    const value = ('$value' in token) ? (token as any).$value : (token as any).value;
-    
-    // If value is an object, it might be a composite type (typography, shadow, etc.)
-    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      // Check for composite types
-      if (value.fontFamily || value.fontSize) {
-        return 'typography';
-      }
-      if (value.color || value.offset || value.radius) {
-        return 'shadow';
-      }
-      if (value.width || value.style) {
-        return 'border';
-      }
-    }
+    // Infer from value
+    const value = token.$value;
     if (typeof value === 'string') {
       // Color formats
       if (value.match(/^#[0-9A-Fa-f]{3,8}$/) || 
@@ -273,54 +163,25 @@ export class TokenParser {
 
   /**
    * Resolve token aliases and references
-   * Prevents circular references
    */
   private resolveAliases(): void {
-    const resolving = new Set<string>(); // Track tokens currently being resolved
-    
     for (const token of this.tokens) {
       if (token.aliases && token.aliases.length > 0) {
-        const tokenPath = token.path.join('.');
-        
-        // Skip if already resolving this token (circular reference)
-        if (resolving.has(tokenPath)) {
-          this.errors.push({
-            path: token.path,
-            message: `Circular alias reference detected: ${tokenPath}`,
-            severity: 'error'
-          });
-          continue;
-        }
-        
-        resolving.add(tokenPath);
-        
-        try {
-          for (const aliasPath of token.aliases) {
-            const referencedToken = this.tokenMap.get(aliasPath);
-            if (referencedToken) {
-              // Check for circular reference
-              if (referencedToken.path.join('.') === tokenPath) {
-                this.errors.push({
-                  path: token.path,
-                  message: `Token references itself: ${tokenPath}`,
-                  severity: 'error'
-                });
-                continue;
-              }
-              
-              // Resolve the alias
-              token.value = referencedToken.value;
-            } else {
-              // Unresolved alias
-              this.errors.push({
-                path: token.path,
-                message: `Unresolved alias: ${aliasPath}`,
-                severity: 'error'
-              });
-            }
+        for (const aliasPath of token.aliases) {
+          const referencedToken = this.tokenMap.get(aliasPath);
+          if (referencedToken) {
+            // Resolve the alias
+            token.value = referencedToken.value;
+            // Keep track of the reference
+            if (!token.aliases) token.aliases = [];
+          } else {
+            // Unresolved alias
+            this.errors.push({
+              path: token.path,
+              message: `Unresolved alias: ${aliasPath}`,
+              severity: 'error'
+            });
           }
-        } finally {
-          resolving.delete(tokenPath);
         }
       }
     }
@@ -392,18 +253,15 @@ export class TokenParser {
 
   private validateDimension(value: any): { valid: boolean; message?: string; severity?: 'error' | 'warning' } {
     if (typeof value === 'string') {
-      // More lenient dimension pattern - allow unitless numbers that might be used as multipliers
-      const dimensionPattern = /^-?\d+(\.\d+)?(px|rem|em|pt|pc|in|cm|mm|q|vh|vw|vmin|vmax|%)?$/;
+      const dimensionPattern = /^-?\d+(\.\d+)?(px|rem|em|pt|pc|in|cm|mm|q|vh|vw|vmin|vmax|%)$/;
       if (!dimensionPattern.test(value)) {
-        // Don't fail - might be a reference or alias
-        return { valid: true, message: `Unusual dimension format: ${value}`, severity: 'warning' };
+        return { valid: false, message: `Invalid dimension format: ${value}`, severity: 'error' };
       }
     } else if (typeof value === 'number') {
       // Numbers are acceptable for dimensions
       return { valid: true };
     } else {
-      // Don't fail validation - might be an object or reference
-      return { valid: true, message: 'Dimension value is not a string or number', severity: 'warning' };
+      return { valid: false, message: 'Dimension value must be a string or number', severity: 'error' };
     }
 
     return { valid: true };
@@ -411,18 +269,16 @@ export class TokenParser {
 
   private validateFontWeight(value: any): { valid: boolean; message?: string; severity?: 'error' | 'warning' } {
     if (typeof value === 'string') {
-      const validWeights = ['100', '200', '300', '400', '500', '600', '700', '800', '900', 'normal', 'bold', 'lighter', 'bolder'];
-      if (!validWeights.includes(value.toLowerCase())) {
-        // Don't fail - might be a custom weight name
-        return { valid: true, message: `Unusual font weight: ${value}`, severity: 'warning' };
+      const validWeights = ['100', '200', '300', '400', '500', '600', '700', '800', '900', 'normal', 'bold'];
+      if (!validWeights.includes(value)) {
+        return { valid: false, message: `Invalid font weight: ${value}`, severity: 'warning' };
       }
     } else if (typeof value === 'number') {
       if (value < 1 || value > 1000) {
         return { valid: false, message: 'Font weight must be between 1 and 1000', severity: 'error' };
       }
     } else {
-      // Don't fail - might be a reference
-      return { valid: true, message: 'Font weight is not a string or number', severity: 'warning' };
+      return { valid: false, message: 'Font weight must be a string or number', severity: 'error' };
     }
 
     return { valid: true };
@@ -442,28 +298,26 @@ export class TokenParser {
   }
 
   private validateTypography(value: any): { valid: boolean; message?: string; severity?: 'error' | 'warning' } {
-    if (typeof value !== 'object' || Array.isArray(value) || value === null) {
-      // Don't fail - might be a reference that will be resolved
-      return { valid: true, message: 'Typography value is not an object', severity: 'warning' };
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      return { valid: false, message: 'Typography value must be an object', severity: 'error' };
     }
 
-    // Typography should have fontFamily and fontSize at minimum, but don't fail if missing
-    if (!value.fontFamily && !value.fontSize) {
-      return { valid: true, message: 'Typography token missing fontFamily or fontSize', severity: 'warning' };
+    // Typography should have fontFamily and fontSize at minimum
+    if (!value.fontFamily) {
+      return { valid: false, message: 'Typography token missing fontFamily', severity: 'warning' };
     }
 
     return { valid: true };
   }
 
   private validateShadow(value: any): { valid: boolean; message?: string; severity?: 'error' | 'warning' } {
-    if (typeof value !== 'object' || Array.isArray(value) || value === null) {
-      // Don't fail - might be a reference
-      return { valid: true, message: 'Shadow value is not an object', severity: 'warning' };
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      return { valid: false, message: 'Shadow value must be an object', severity: 'error' };
     }
 
-    // Shadow should have color and offset, but don't fail if missing
-    if (!value.color && !value.offset && !value.radius) {
-      return { valid: true, message: 'Shadow token missing color, offset, or radius', severity: 'warning' };
+    // Shadow should have color and offset
+    if (!value.color) {
+      return { valid: false, message: 'Shadow token missing color', severity: 'warning' };
     }
 
     return { valid: true };

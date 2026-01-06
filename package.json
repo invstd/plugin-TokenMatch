@@ -4,8 +4,7 @@
   "description": "A Figma plugin to connect to GitHub repositories and check design tokens",
   "main": "code.js",
   "scripts": {
-    "build": "tsc --noEmit && npm run bundle",
-    "bundle": "esbuild code.ts --bundle --format=iife --outfile=code.js --platform=browser --target=es2017",
+    "build": "tsc",
     "watch": "tsc --watch"
   },
   "author": "",
