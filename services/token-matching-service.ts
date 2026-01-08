@@ -90,8 +90,16 @@ export class TokenMatchingService {
         matchDetails.push(...this.matchEffects(token, component));
         break;
       default:
-        // Try to match by inferring type from value
+        // Try to match by inferring type from value AND path
         matchDetails.push(...this.matchByValue(token, component));
+        // Also try spacing matching for tokens with spacing-related paths
+        if (this.looksLikeSpacingToken(token)) {
+          matchDetails.push(...this.matchSpacing(token, component));
+        }
+        // Try effect matching for shadow-like paths
+        if (this.looksLikeEffectToken(token)) {
+          matchDetails.push(...this.matchEffects(token, component));
+        }
     }
 
     // Recursively check children
@@ -331,8 +339,50 @@ export class TokenMatchingService {
    */
   private matchSpacing(token: ParsedToken, component: ComponentProperties): MatchDetail[] {
     const matches: MatchDetail[] = [];
+    const tokenPath = token.path.join('.');
     const tokenValue = this.normalizeDimension(token.value);
 
+    // First pass: Match by token reference (Tokens Studio path matching)
+    for (const spacing of component.spacing) {
+      if (spacing.tokenReference) {
+        // Clean up the token reference
+        let refPath = spacing.tokenReference.trim();
+        refPath = refPath.replace(/^["']|["']$/g, '');
+        refPath = refPath.replace(/^[{]|[}]$/g, '');
+        refPath = refPath.replace(/^\$/, '');
+        
+        const normalizedRef = refPath.toLowerCase();
+        const normalizedToken = tokenPath.toLowerCase();
+        
+        // Exact path match
+        if (normalizedRef === normalizedToken) {
+          matches.push({
+            property: `${spacing.type} (token ref)`,
+            propertyType: 'spacing',
+            matchedValue: `${spacing.value}${spacing.unit} ← ${spacing.tokenReference}`,
+            tokenValue: tokenPath,
+            confidence: 1.0
+          });
+        }
+        // Partial path match
+        else if (normalizedRef.includes(normalizedToken) || normalizedToken.includes(normalizedRef)) {
+          matches.push({
+            property: `${spacing.type} (token ref)`,
+            propertyType: 'spacing',
+            matchedValue: `${spacing.value}${spacing.unit} ← ${spacing.tokenReference}`,
+            tokenValue: tokenPath,
+            confidence: 0.85
+          });
+        }
+      }
+    }
+
+    // If we found reference matches, return them
+    if (matches.length > 0) {
+      return matches;
+    }
+
+    // Second pass: Fall back to value matching
     if (tokenValue === null) return matches;
 
     for (const spacing of component.spacing) {
@@ -345,7 +395,7 @@ export class TokenMatchingService {
           propertyType: 'spacing',
           matchedValue: `${spacing.value}${spacing.unit}`,
           tokenValue: String(token.value),
-          confidence: 1.0
+          confidence: 0.7
         });
       }
     }
@@ -358,7 +408,49 @@ export class TokenMatchingService {
    */
   private matchEffects(token: ParsedToken, component: ComponentProperties): MatchDetail[] {
     const matches: MatchDetail[] = [];
+    const tokenPath = token.path.join('.');
 
+    // First pass: Match by token reference (Tokens Studio path matching)
+    for (const effect of component.effects) {
+      if (effect.tokenReference) {
+        // Clean up the token reference
+        let refPath = effect.tokenReference.trim();
+        refPath = refPath.replace(/^["']|["']$/g, '');
+        refPath = refPath.replace(/^[{]|[}]$/g, '');
+        refPath = refPath.replace(/^\$/, '');
+        
+        const normalizedRef = refPath.toLowerCase();
+        const normalizedToken = tokenPath.toLowerCase();
+        
+        // Exact path match
+        if (normalizedRef === normalizedToken) {
+          matches.push({
+            property: `${effect.type} (token ref)`,
+            propertyType: 'effect',
+            matchedValue: `${effect.type} ← ${effect.tokenReference}`,
+            tokenValue: tokenPath,
+            confidence: 1.0
+          });
+        }
+        // Partial path match
+        else if (normalizedRef.includes(normalizedToken) || normalizedToken.includes(normalizedRef)) {
+          matches.push({
+            property: `${effect.type} (token ref)`,
+            propertyType: 'effect',
+            matchedValue: `${effect.type} ← ${effect.tokenReference}`,
+            tokenValue: tokenPath,
+            confidence: 0.85
+          });
+        }
+      }
+    }
+
+    // If we found reference matches, return them
+    if (matches.length > 0) {
+      return matches;
+    }
+
+    // Second pass: Fall back to value matching for shadow tokens
     if (typeof token.value !== 'object' || token.value === null) {
       return matches;
     }
@@ -409,7 +501,7 @@ export class TokenMatchingService {
             propertyType: 'effect',
             matchedValue: matchedProps.join(', '),
             tokenValue: JSON.stringify(token.value),
-            confidence: Math.min(confidence, 1.0)
+            confidence: Math.min(confidence, 0.7) // Lower confidence for value-only matches
           });
         }
       }
@@ -589,6 +681,30 @@ export class TokenMatchingService {
     if (typeof value === 'number') return true;
     if (typeof value !== 'string') return false;
     return /^-?\d+(\.\d+)?(px|rem|em|pt|pc|in|cm|mm|q|vh|vw|vmin|vmax|%)$/.test(value.trim());
+  }
+
+  /**
+   * Check if token path suggests it's a spacing/dimension token
+   */
+  private looksLikeSpacingToken(token: ParsedToken): boolean {
+    const pathStr = token.path.join('.').toLowerCase();
+    const spacingKeywords = [
+      'spacing', 'space', 'size', 'sizing', 'dimension',
+      'width', 'height', 'padding', 'margin', 'gap',
+      'radius', 'border', 'inset', 'offset'
+    ];
+    return spacingKeywords.some(keyword => pathStr.includes(keyword));
+  }
+
+  /**
+   * Check if token path suggests it's an effect/shadow token
+   */
+  private looksLikeEffectToken(token: ParsedToken): boolean {
+    const pathStr = token.path.join('.').toLowerCase();
+    const effectKeywords = [
+      'shadow', 'effect', 'blur', 'elevation', 'drop'
+    ];
+    return effectKeywords.some(keyword => pathStr.includes(keyword));
   }
 }
 

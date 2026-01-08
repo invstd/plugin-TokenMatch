@@ -414,8 +414,20 @@ function Plugin() {
   const canScan = isConfigured && selectedToken && fetchedTokens.length > 0;
 
   return (
-    <Container space="medium">
-      <Stack space="medium">
+    <div style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      height: '100vh',
+      overflow: 'hidden'
+    }}>
+      {/* Scrollable content area */}
+      <div style={{ 
+        flex: 1, 
+        overflowY: 'auto',
+        paddingBottom: '36px' // Space for footer
+      }}>
+        <Container space="medium">
+          <Stack space="medium">
         {currentView === 'main' ? (
           <Stack space="medium">
             <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -952,7 +964,7 @@ function Plugin() {
       {toast && (
         <div style={{
           position: 'fixed',
-          bottom: '16px',
+          bottom: '48px',
           left: '16px',
           right: '16px',
           padding: '10px 16px',
@@ -973,14 +985,14 @@ function Plugin() {
           {toast}
         </div>
       )}
+      </Container>
+    </div>
 
-      {/* Global Footer */}
-      <div style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
+    {/* Fixed Footer */}
+    <div style={{
+        position: 'relative',
         height: '36px',
+        flexShrink: 0,
         background: 'var(--figma-color-bg)',
         borderTop: '1px solid var(--figma-color-border)',
         display: 'flex',
@@ -1002,14 +1014,13 @@ function Plugin() {
         </div>
 
         {/* Right side - Version */}
-        <div style={{ display: 'flex', alignItems: 'center', paddingRight: '8px' }}>
-          <div style={{ 
-            padding: '2px 6px', 
-            backgroundColor: 'var(--figma-color-bg-secondary)', 
-            borderRadius: '4px' 
-          }}>
-            <span style={{ fontSize: '10px', color: 'var(--figma-color-text-tertiary)' }}>v0.1.3</span>
-          </div>
+        <div style={{ 
+          padding: '2px 6px', 
+          backgroundColor: 'var(--figma-color-bg-secondary)', 
+          borderRadius: '4px',
+          marginRight: '6px'
+        }}>
+          <span style={{ fontSize: '10px', color: 'var(--figma-color-text-tertiary)' }}>v0.1.3</span>
         </div>
       </div>
 
@@ -1017,7 +1028,7 @@ function Plugin() {
       <div
         onMouseDown={handleWindowResizeStart as any}
         style={{
-          position: 'fixed',
+          position: 'absolute',
           bottom: '4px',
           right: '4px',
           width: '14px',
@@ -1034,10 +1045,7 @@ function Plugin() {
           <path d="M8 6L6 8" stroke="#555" strokeWidth="1.5" strokeLinecap="round"/>
         </svg>
       </div>
-      
-      {/* Bottom spacer for footer */}
-      <div style={{ height: '36px', flexShrink: 0 }} />
-    </Container>
+    </div>
   );
 }
 

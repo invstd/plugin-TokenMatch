@@ -93,7 +93,85 @@ export class FigmaComponentService {
       'stroke',
       'strokes',
       `strokeColor`,
-      `strokeColor[${strokeIndex}]`
+      `strokeColor[${strokeIndex}]`,
+      'borderColor'
+    ];
+    
+    for (const key of keys) {
+      const ref = this.getTokenReference(node, key);
+      if (ref) return ref;
+    }
+    
+    return undefined;
+  }
+
+  /**
+   * Extract Tokens Studio token references for typography
+   */
+  private getTypographyTokenReference(node: SceneNode, property: string): string | undefined {
+    // Try different key formats for typography properties
+    const keyMap: Record<string, string[]> = {
+      'fontFamily': ['fontFamily', 'fontFamilies', 'font-family', 'typography.fontFamily'],
+      'fontSize': ['fontSize', 'fontSizes', 'font-size', 'typography.fontSize'],
+      'fontWeight': ['fontWeight', 'fontWeights', 'font-weight', 'typography.fontWeight'],
+      'lineHeight': ['lineHeight', 'lineHeights', 'line-height', 'typography.lineHeight'],
+      'letterSpacing': ['letterSpacing', 'letter-spacing', 'typography.letterSpacing'],
+      'typography': ['typography', 'text', 'textStyle', 'text-style']
+    };
+    
+    const keys = keyMap[property] || [property];
+    
+    for (const key of keys) {
+      const ref = this.getTokenReference(node, key);
+      if (ref) return ref;
+    }
+    
+    return undefined;
+  }
+
+  /**
+   * Extract Tokens Studio token references for spacing/dimensions
+   */
+  private getSpacingTokenReference(node: SceneNode, property: string): string | undefined {
+    // Try different key formats for spacing properties
+    const keyMap: Record<string, string[]> = {
+      'width': ['width', 'sizing', 'sizing.width'],
+      'height': ['height', 'sizing', 'sizing.height'],
+      'padding': ['padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'spacing.padding'],
+      'paddingTop': ['paddingTop', 'padding-top', 'spacing.paddingTop'],
+      'paddingRight': ['paddingRight', 'padding-right', 'spacing.paddingRight'],
+      'paddingBottom': ['paddingBottom', 'padding-bottom', 'spacing.paddingBottom'],
+      'paddingLeft': ['paddingLeft', 'padding-left', 'spacing.paddingLeft'],
+      'gap': ['itemSpacing', 'gap', 'spacing', 'spacing.gap'],
+      'borderRadius': ['borderRadius', 'border-radius', 'radius', 'cornerRadius'],
+      'borderWidth': ['borderWidth', 'border-width', 'strokeWidth']
+    };
+    
+    const keys = keyMap[property] || [property];
+    
+    for (const key of keys) {
+      const ref = this.getTokenReference(node, key);
+      if (ref) return ref;
+    }
+    
+    return undefined;
+  }
+
+  /**
+   * Extract Tokens Studio token references for effects/shadows
+   */
+  private getEffectTokenReference(node: SceneNode, effectIndex: number): string | undefined {
+    // Try different key formats for effect properties
+    const keys = [
+      `effects[${effectIndex}]`,
+      `effect[${effectIndex}]`,
+      `boxShadow[${effectIndex}]`,
+      'boxShadow',
+      'shadow',
+      'effects',
+      'effect',
+      'dropShadow',
+      'innerShadow'
     ];
     
     for (const key of keys) {
@@ -414,14 +492,16 @@ export class FigmaComponentService {
         const fontName = textNode.fontName;
         
         // Get Tokens Studio token references for typography
-        const fontFamilyToken = this.getTokenReference(textNode, 'fontFamily') || 
-                               this.getTokenReference(textNode, 'font-family');
-        const fontSizeToken = this.getTokenReference(textNode, 'fontSize') || 
-                             this.getTokenReference(textNode, 'font-size');
-        const fontWeightToken = this.getTokenReference(textNode, 'fontWeight') || 
-                               this.getTokenReference(textNode, 'font-weight');
-        // Use the first available token reference, or combine if multiple exist
-        const tokenRef = fontFamilyToken || fontSizeToken || fontWeightToken;
+        // First try composite typography token, then individual properties
+        const typographyToken = this.getTypographyTokenReference(textNode, 'typography');
+        const fontFamilyToken = this.getTypographyTokenReference(textNode, 'fontFamily');
+        const fontSizeToken = this.getTypographyTokenReference(textNode, 'fontSize');
+        const fontWeightToken = this.getTypographyTokenReference(textNode, 'fontWeight');
+        const lineHeightToken = this.getTypographyTokenReference(textNode, 'lineHeight');
+        const letterSpacingToken = this.getTypographyTokenReference(textNode, 'letterSpacing');
+        
+        // Use composite typography token if available, otherwise use first individual token
+        const tokenRef = typographyToken || fontFamilyToken || fontSizeToken || fontWeightToken || lineHeightToken || letterSpacingToken;
 
         typography.push({
           fontFamily: fontName.family,
@@ -469,46 +549,61 @@ export class FigmaComponentService {
     if (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET') {
       const frame = node as ComponentNode | ComponentSetNode;
 
-      // Width and height
+      // Width and height with token references
+      const widthToken = this.getSpacingTokenReference(node, 'width');
+      const heightToken = this.getSpacingTokenReference(node, 'height');
+      
       spacing.push({
         type: 'width',
         value: frame.width,
-        unit: 'px'
+        unit: 'px',
+        tokenReference: widthToken
       });
       spacing.push({
         type: 'height',
         value: frame.height,
-        unit: 'px'
+        unit: 'px',
+        tokenReference: heightToken
       });
 
       // Padding (only for frames with auto-layout)
       if ('paddingTop' in frame && typeof frame.paddingTop === 'number') {
+        const paddingTopToken = this.getSpacingTokenReference(node, 'paddingTop');
+        const paddingRightToken = this.getSpacingTokenReference(node, 'paddingRight');
+        const paddingBottomToken = this.getSpacingTokenReference(node, 'paddingBottom');
+        const paddingLeftToken = this.getSpacingTokenReference(node, 'paddingLeft');
+        const paddingToken = this.getSpacingTokenReference(node, 'padding');
+        
         if (frame.paddingTop) {
           spacing.push({
             type: 'padding',
             value: frame.paddingTop,
-            unit: 'px'
+            unit: 'px',
+            tokenReference: paddingTopToken || paddingToken
           });
         }
         if (frame.paddingRight) {
           spacing.push({
             type: 'padding',
             value: frame.paddingRight,
-            unit: 'px'
+            unit: 'px',
+            tokenReference: paddingRightToken || paddingToken
           });
         }
         if (frame.paddingBottom) {
           spacing.push({
             type: 'padding',
             value: frame.paddingBottom,
-            unit: 'px'
+            unit: 'px',
+            tokenReference: paddingBottomToken || paddingToken
           });
         }
         if (frame.paddingLeft) {
           spacing.push({
             type: 'padding',
             value: frame.paddingLeft,
-            unit: 'px'
+            unit: 'px',
+            tokenReference: paddingLeftToken || paddingToken
           });
         }
       }
@@ -519,23 +614,41 @@ export class FigmaComponentService {
         typeof frame.itemSpacing === 'number' &&
         frame.itemSpacing
       ) {
+        const gapToken = this.getSpacingTokenReference(node, 'gap');
         spacing.push({
           type: 'gap',
           value: frame.itemSpacing,
-          unit: 'px'
+          unit: 'px',
+          tokenReference: gapToken
+        });
+      }
+      
+      // Border radius with token reference
+      if ('cornerRadius' in frame && typeof frame.cornerRadius === 'number' && frame.cornerRadius > 0) {
+        const radiusToken = this.getSpacingTokenReference(node, 'borderRadius');
+        spacing.push({
+          type: 'padding', // Using padding type for now, could add 'borderRadius' to SpacingProperty type
+          value: frame.cornerRadius,
+          unit: 'px',
+          tokenReference: radiusToken
         });
       }
     } else if (node.type === 'INSTANCE') {
       const instance = node as InstanceNode;
+      const widthToken = this.getSpacingTokenReference(node, 'width');
+      const heightToken = this.getSpacingTokenReference(node, 'height');
+      
       spacing.push({
         type: 'width',
         value: instance.width,
-        unit: 'px'
+        unit: 'px',
+        tokenReference: widthToken
       });
       spacing.push({
         type: 'height',
         value: instance.height,
-        unit: 'px'
+        unit: 'px',
+        tokenReference: heightToken
       });
     }
 
@@ -549,8 +662,12 @@ export class FigmaComponentService {
     const effects: EffectProperty[] = [];
 
     if ('effects' in node && Array.isArray(node.effects)) {
-      for (const effect of node.effects) {
+      for (let i = 0; i < node.effects.length; i++) {
+        const effect = node.effects[i];
         if (effect.visible) {
+          // Get token reference for this effect
+          const tokenRef = this.getEffectTokenReference(node, i);
+          
           switch (effect.type) {
             case 'DROP_SHADOW':
               effects.push({
@@ -569,7 +686,8 @@ export class FigmaComponentService {
                   x: effect.offset?.x ?? 0,
                   y: effect.offset?.y ?? 0
                 },
-                spread: effect.spread
+                spread: effect.spread,
+                tokenReference: tokenRef
               });
               break;
 
@@ -590,7 +708,8 @@ export class FigmaComponentService {
                   x: effect.offset?.x ?? 0,
                   y: effect.offset?.y ?? 0
                 },
-                spread: effect.spread
+                spread: effect.spread,
+                tokenReference: tokenRef
               });
               break;
 
@@ -598,7 +717,8 @@ export class FigmaComponentService {
               effects.push({
                 type: 'layer-blur',
                 visible: effect.visible,
-                radius: effect.radius
+                radius: effect.radius,
+                tokenReference: tokenRef
               });
               break;
 
@@ -606,7 +726,8 @@ export class FigmaComponentService {
               effects.push({
                 type: 'background-blur',
                 visible: effect.visible,
-                radius: effect.radius
+                radius: effect.radius,
+                tokenReference: tokenRef
               });
               break;
           }

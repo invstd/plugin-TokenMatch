@@ -46,6 +46,7 @@ export interface EffectProperty {
     y: number;
   };
   spread?: number;
+  tokenReference?: string; // Token Studio token reference
 }
 
 export interface ComponentProperties {
