@@ -1,6 +1,9 @@
 /**
  * Token Parser Service
- * Parses design token files following W3C Design Tokens Format
+ * Parses design token files following multiple formats:
+ * - W3C Design Tokens Format ($value, $type)
+ * - Token Studio format (value, type)
+ * - Plain nested JSON (primitive values at leaf nodes)
  */
 
 import {
@@ -25,7 +28,7 @@ export class TokenParser {
     this.errors = [];
     this.tokenMap = new Map();
 
-    // First pass: collect all tokens
+    // First pass: collect all tokens (supports multiple formats)
     this.collectTokens(tokenFile, []);
 
     // Second pass: resolve aliases and references
@@ -38,7 +41,7 @@ export class TokenParser {
       tokens: this.tokens,
       metadata: {
         filePath,
-        format: 'w3c-design-tokens',
+        format: 'auto-detected',
         errors: this.errors
       }
     };
@@ -46,45 +49,148 @@ export class TokenParser {
 
   /**
    * Collect all tokens from the token file structure
+   * Supports: W3C ($value), Token Studio (value), and plain nested primitives
    */
-  private collectTokens(obj: TokenFile | DesignToken, path: string[]): void {
-    if (this.isDesignToken(obj)) {
-      // This is a token
-      const tokenName = path[path.length - 1] || 'unnamed';
-      const tokenType = this.inferTokenType(obj, path);
+  private collectTokens(obj: any, path: string[]): void {
+    // Skip null/undefined
+    if (obj === null || obj === undefined) {
+      return;
+    }
+
+    // Skip metadata keys that start with $ but aren't token values
+    const currentKey = path[path.length - 1] || '';
+    if (currentKey.startsWith('$') && currentKey !== '$value' && currentKey !== '$type') {
+      return;
+    }
+
+    // Check for W3C format token ($value)
+    if (this.isW3CToken(obj)) {
+      this.addToken(obj.$value, obj.$type, obj.$description, obj.$extensions, path);
+      return;
+    }
+
+    // Check for Token Studio format (value property without $)
+    if (this.isTokenStudioToken(obj)) {
+      this.addToken(obj.value, obj.type, obj.description, obj.extensions, path);
+      return;
+    }
+
+    // Check if this is a primitive value at a leaf node (plain nested format)
+    if (this.isPrimitiveToken(obj, path)) {
+      this.addToken(obj, undefined, undefined, undefined, path);
+      return;
+    }
+
+    // If it's an object or array, recurse into children
+    if (typeof obj === 'object') {
+      const keys = Array.isArray(obj) ? obj.map((_, i) => String(i)) : Object.keys(obj);
       
-      const parsedToken: ParsedToken = {
-        name: tokenName,
-        value: obj.$value,
-        type: tokenType,
-        path: [...path],
-        description: obj.$description,
-        extensions: obj.$extensions,
-        rawValue: obj.$value
-      };
-
-      // Check for alias/reference
-      if (typeof obj.$value === 'string' && obj.$value.startsWith('{')) {
-        parsedToken.aliases = this.extractAliases(obj.$value);
-      }
-
-      this.tokens.push(parsedToken);
-      this.tokenMap.set(path.join('.'), parsedToken);
-    } else {
-      // This is a group, recurse
-      for (const key in obj) {
-        if (obj.hasOwnProperty(key)) {
-          this.collectTokens(obj[key] as TokenFile | DesignToken, [...path, key]);
+      for (const key of keys) {
+        // Skip internal/metadata keys
+        if (key.startsWith('$') || key === 'extensions' || key === 'description') {
+          continue;
         }
+        
+        const child = Array.isArray(obj) ? obj[parseInt(key)] : obj[key];
+        this.collectTokens(child, [...path, key]);
       }
     }
   }
 
   /**
-   * Check if an object is a DesignToken
+   * Add a token to the collection
+   */
+  private addToken(
+    value: any,
+    explicitType: string | undefined,
+    description: string | undefined,
+    extensions: Record<string, any> | undefined,
+    path: string[]
+  ): void {
+    const tokenName = path[path.length - 1] || 'unnamed';
+    const tokenType = this.inferTokenType({ $value: value, $type: explicitType as TokenType }, path);
+
+    // Handle alias references in the value
+    let aliases: string[] | undefined;
+    if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('$'))) {
+      aliases = this.extractAliases(value);
+    }
+
+    const parsedToken: ParsedToken = {
+      name: tokenName,
+      value: value,
+      type: tokenType,
+      path: [...path],
+      description: description,
+      extensions: extensions,
+      rawValue: value,
+      aliases: aliases
+    };
+
+    this.tokens.push(parsedToken);
+    this.tokenMap.set(path.join('.'), parsedToken);
+  }
+
+  /**
+   * Check if an object is a W3C Design Token (has $value)
+   */
+  private isW3CToken(obj: any): boolean {
+    return obj && typeof obj === 'object' && '$value' in obj;
+  }
+
+  /**
+   * Check if an object is a Token Studio token (has value but not $value)
+   */
+  private isTokenStudioToken(obj: any): boolean {
+    if (!obj || typeof obj !== 'object') return false;
+    if ('$value' in obj) return false; // W3C takes precedence
+    if (!('value' in obj)) return false;
+    
+    // Additional checks to distinguish from regular objects
+    // Token Studio tokens typically have 'value' and optionally 'type', 'description'
+    const value = obj.value;
+    
+    // If value is a primitive or simple color/dimension, it's likely a token
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return true;
+    }
+    
+    // If value is an object (like typography or shadow composite tokens)
+    if (typeof value === 'object' && value !== null) {
+      // Check if it has typical token properties
+      const hasTokenProps = 'type' in obj || 'description' in obj;
+      return hasTokenProps;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Check if a value is a primitive that should be treated as a token
+   * (for plain nested JSON format)
+   * 
+   * PERMISSIVE: Any primitive at depth 1+ is considered a potential token
+   */
+  private isPrimitiveToken(value: any, path: string[]): boolean {
+    // Must be a primitive
+    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+      return false;
+    }
+
+    // Must have at least 1 level of nesting (not root-level primitives)
+    if (path.length < 1) {
+      return false;
+    }
+
+    // Accept ALL primitives at depth 1+ as potential tokens
+    return true;
+  }
+
+  /**
+   * Legacy check for DesignToken type
    */
   private isDesignToken(obj: any): obj is DesignToken {
-    return obj && typeof obj === 'object' && '$value' in obj;
+    return this.isW3CToken(obj);
   }
 
   /**
@@ -146,16 +252,32 @@ export class TokenParser {
 
   /**
    * Extract alias references from token value
-   * Format: {path.to.token} or {path.to.token, fallback}
+   * Supports multiple formats:
+   * - W3C: {path.to.token} or {path.to.token, fallback}
+   * - Token Studio: {path.to.token} or $path.to.token
    */
   private extractAliases(value: string): string[] {
     const aliases: string[] = [];
-    const aliasPattern = /\{([^}]+)\}/g;
+    
+    // Pattern for curly brace references: {path.to.token}
+    const bracketPattern = /\{([^}]+)\}/g;
     let match;
 
-    while ((match = aliasPattern.exec(value)) !== null) {
-      const aliasPath = match[1].split(',').map(s => s.trim())[0]; // Take first part before comma
+    while ((match = bracketPattern.exec(value)) !== null) {
+      let aliasPath = match[1].split(',').map(s => s.trim())[0]; // Take first part before comma
+      // Remove leading $ if present inside braces
+      if (aliasPath.startsWith('$')) {
+        aliasPath = aliasPath.substring(1);
+      }
       aliases.push(aliasPath);
+    }
+
+    // Pattern for $ prefix references (Token Studio): $path.to.token
+    if (value.startsWith('$') && !value.startsWith('{')) {
+      const dollarPattern = /\$([a-zA-Z0-9._-]+)/g;
+      while ((match = dollarPattern.exec(value)) !== null) {
+        aliases.push(match[1]);
+      }
     }
 
     return aliases;
@@ -196,8 +318,8 @@ export class TokenParser {
       if (!validation.valid) {
         this.errors.push({
           path: token.path,
-          message: validation.message,
-          severity: validation.severity
+          message: validation.message || 'Validation error',
+          severity: validation.severity || 'error'
         });
       }
     }

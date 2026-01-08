@@ -1,20 +1,7 @@
 {
+  "extends": "@create-figma-plugin/tsconfig",
   "compilerOptions": {
-    "target": "ES2017",
-    "lib": ["ES2017"],
-    "moduleResolution": "node",
-    "typeRoots": [
-      "./node_modules/@types",
-      "./node_modules/@figma",
-      "../node_modules/@types",
-      "../node_modules/@figma"
-    ],
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./*"]
-    }
+    "typeRoots": ["node_modules/@figma", "node_modules/@types"]
   },
-  "include": [
-    "**/*.ts"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

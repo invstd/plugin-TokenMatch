@@ -2,16 +2,41 @@
   "name": "figma-tokens-checker",
   "version": "1.0.0",
   "description": "A Figma plugin to connect to GitHub repositories and check design tokens",
-  "main": "code.js",
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc --watch"
+    "build": "npm run build:css && npm run build:js",
+    "build:css": "npx @tailwindcss/cli --input ./src/input.css --output ./src/output.css",
+    "build:js": "build-figma-plugin --typecheck --minify",
+    "watch": "npm run build:css && concurrently npm:watch:css npm:watch:js",
+    "watch:css": "npx @tailwindcss/cli --input ./src/input.css --output ./src/output.css --watch",
+    "watch:js": "build-figma-plugin --typecheck --watch"
   },
   "author": "",
   "license": "MIT",
+  "dependencies": {
+    "@create-figma-plugin/ui": "^4.0.3",
+    "@create-figma-plugin/utilities": "^4.0.3",
+    "preact": ">=10"
+  },
   "devDependencies": {
-    "@figma/plugin-typings": "^1.90.0",
-    "esbuild": "^0.27.1",
-    "typescript": "^5.3.0"
+    "@create-figma-plugin/build": "^4.0.3",
+    "@create-figma-plugin/tsconfig": "^4.0.3",
+    "@figma/plugin-typings": "1.109.0",
+    "@tailwindcss/cli": ">=4",
+    "concurrently": ">=9",
+    "tailwindcss": ">=4",
+    "typescript": ">=5"
+  },
+  "figma-plugin": {
+    "editorType": [
+      "figma"
+    ],
+    "id": "1234567890123456789",
+    "name": "TokenMatch",
+    "main": "src/main.ts",
+    "ui": "src/ui.tsx",
+    "documentAccess": "dynamic-page",
+    "networkAccess": {
+      "allowedDomains": ["https://api.github.com"]
+    }
   }
 }
