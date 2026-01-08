@@ -1,17 +1,26 @@
 # Token Matching Investigation & Implementation Plan
 
-## Current State
+## Current State (Updated: January 2026)
 
 ### What Works ✅
 - Fetching design tokens from GitHub repository
 - Parsing token files (W3C, Token Studio, nested JSON formats)
 - Scanning Figma components and extracting resolved values (hex colors, font properties, spacing values)
 - Basic UI for selecting tokens and initiating scans
+- **Color token matching** — Works reliably via Tokens Studio token references
+- **Token reference extraction** — Successfully extracting token paths from Tokens Studio plugin data
+- **Path-based matching** — Matching tokens by their path (e.g., `ids.color.element.primary.default`)
+- **Footer/UI** — Fixed footer layout, resize handle, scrollbar behavior all working correctly
+
+### What Works Partially ⚠️
+- **Typography token matching** — Token reference extraction added, but needs more testing with real tokenized files
+- **Spacing token matching** — Path-based matching added (e.g., `ids.spacing.1x`), but token reference extraction from Figma may not capture all spacing properties
+- **Effect/Shadow token matching** — Path-based matching added, but token reference extraction needs verification
 
 ### What Doesn't Work ❌
-- **Cannot access Tokens Studio metadata** — We don't know how/where Tokens Studio stores token references in Figma
-- **No token reference extraction** — Components only show resolved values (e.g., `#FF0000`), not token names (e.g., `colors.primary.500`)
-- **Matching fails** — Without token references, we can only match by value, which is unreliable and produces false positives
+- **Spacing token references** — Tokens Studio may store spacing tokens under different keys than we're checking (e.g., `spacing`, `dimension`, `sizing`)
+- **Value-based fallback** — When no token reference exists, value matching has low confidence and may produce false positives
+- **Composite tokens** — Typography tokens with multiple properties (fontFamily, fontSize, fontWeight combined) may not match correctly
 
 ---
 
@@ -264,37 +273,81 @@ If we cannot access Tokens Studio data directly:
 - [x] Phase 1.1: Create diagnostic tool — COMPLETE
 - [x] Phase 1.2: Test with tokenized components — COMPLETE (format discovered!)
 - [x] Phase 2: Document findings — COMPLETE (see above)
-- [x] Phase 3: Update component scanner — COMPLETE (already extracting token refs)
-- [x] Phase 4: Update matching service — COMPLETE (now matches by path first!)
-- [ ] Phase 5: Implement fallback — IN PROGRESS (value matching as fallback)
+- [x] Phase 3: Update component scanner — COMPLETE (extracting token refs for colors, typography, spacing, effects)
+- [x] Phase 4: Update matching service — COMPLETE (matches by path first, value fallback)
+- [x] Phase 5: Implement fallback — COMPLETE (value matching with lower confidence)
 
-### Implementation Notes (Phase 1.1)
+---
 
-**Diagnostic Tool Added:**
+## Recent Implementation (January 2026)
 
-The plugin now includes a "Token Data Inspector" in the Settings view that:
+### Token Reference Extraction
 
-1. **Inspects selected nodes** and up to 3 levels of children
-2. **Checks multiple namespaces** including:
+**FigmaComponentService** now extracts token references for:
+
+1. **Colors** (`getFillTokenReferences`, `getStrokeTokenReferences`)
+   - Keys checked: `fill`, `fills`, `fillColor`, `stroke`, `strokes`, `strokeColor`, `borderColor`
+   - ✅ Working well
+
+2. **Typography** (`getTypographyTokenReference`)
+   - Keys checked: `fontFamily`, `fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`, `typography`, `text`, `textStyle`
+   - ⚠️ Needs more testing
+
+3. **Spacing** (`getSpacingTokenReference`)
+   - Keys checked: `width`, `height`, `padding`, `paddingTop/Right/Bottom/Left`, `gap`, `itemSpacing`, `spacing`, `borderRadius`, `borderWidth`
+   - ⚠️ May not capture all Tokens Studio keys
+
+4. **Effects** (`getEffectTokenReference`)
+   - Keys checked: `boxShadow`, `shadow`, `effects`, `effect`, `dropShadow`, `innerShadow`
+   - ⚠️ Needs verification
+
+### Token Matching Service
+
+**TokenMatchingService** now:
+
+1. **Prioritizes token reference matching** — If a component has a token reference, match by path first
+2. **Falls back to value matching** — Only if no reference match, try matching by resolved value
+3. **Uses path-based inference** — For tokens with paths like `ids.spacing.1x`, tries spacing matching even if type is unknown
+4. **Supports partial path matching** — Matches if token path contains or is contained by component's token reference
+
+### Path-Based Matching Helpers
+
+Added helper methods to infer token type from path:
+- `looksLikeSpacingToken()` — Checks for keywords: spacing, space, size, sizing, dimension, width, height, padding, margin, gap, radius, border, inset, offset
+- `looksLikeEffectToken()` — Checks for keywords: shadow, effect, blur, elevation, drop
+
+---
+
+## Known Issues & Next Steps
+
+### Issues to Investigate
+
+1. **Spacing tokens not matching** — Need to verify what keys Tokens Studio actually uses for spacing properties. May need to run diagnostic tool on spacing-tokenized components.
+
+2. **Typography composite tokens** — When Tokens Studio applies a typography token (with fontFamily + fontSize + fontWeight), need to verify if it stores as one key or multiple.
+
+3. **Figma Variables** — If Tokens Studio syncs to Figma Variables, we may need to check `boundVariables` on nodes instead of/in addition to plugin data.
+
+### Next Steps
+
+1. [ ] Run diagnostic tool on components with spacing/dimension tokens applied
+2. [ ] Document actual keys used by Tokens Studio for spacing
+3. [ ] Add support for Figma Variables if Tokens Studio uses them
+4. [ ] Improve UI feedback when no matches found (show why)
+5. [ ] Add confidence indicators to match results
+
+---
+
+## Diagnostic Tool (Removed from UI)
+
+The diagnostic "Token Data Inspector" was removed from the Settings UI for cleaner UX, but the functionality remains in the codebase (`main.ts` has the `inspect-selection` handler). To re-enable:
+
+1. Add the UI back to Settings view in `ui.tsx`
+2. The handler checks these namespaces:
    - `tokens`, `tokens-studio`, `tokensStudio`, `figma-tokens`
    - `design-tokens`, `token-studio`, `com.tokens.studio`, `tokens.studio`
    - `io.tokens.studio`, `figmatokens`, `style-dictionary`
    - Generic: `ds`, `design-system`, `theme`, `variables`
 
-3. **Checks for Figma Variables** bindings (modern approach where Tokens Studio may sync to Variables)
-
-4. **Reports:**
-   - Total nodes inspected
-   - Nodes with plugin data
-   - Namespaces found
-   - Plugin data keys found
-   - Whether any Figma Variable bindings exist
-
-**To Use:**
-1. Open the plugin
-2. Go to Settings (gear icon)
-3. Scroll down to "Token Data Inspector (Debug)"
-4. Select a node in Figma that has Tokens Studio tokens applied
-5. Click "Inspect Selection"
-6. Review the results to see what namespaces and keys Tokens Studio uses
+3. Also checks for Figma Variable bindings via `boundVariables` property
 
