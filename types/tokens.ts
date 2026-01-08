@@ -3,7 +3,7 @@
  * Based on W3C Design Tokens Format Specification
  */
 
-export type TokenType = 'color' | 'dimension' | 'fontFamily' | 'fontWeight' | 'duration' | 'cubicBezier' | 'number' | 'string' | 'boolean' | 'typography' | 'shadow' | 'border' | 'composition';
+export type TokenType = 'color' | 'dimension' | 'fontFamily' | 'fontWeight' | 'duration' | 'cubicBezier' | 'number' | 'string' | 'boolean' | 'typography' | 'shadow' | 'border' | 'borderRadius' | 'borderWidth' | 'composition';
 
 export interface DesignToken {
   $type?: TokenType;

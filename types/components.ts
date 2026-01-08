@@ -30,7 +30,7 @@ export interface TypographyProperty {
 }
 
 export interface SpacingProperty {
-  type: 'width' | 'height' | 'padding' | 'gap';
+  type: 'width' | 'height' | 'padding' | 'gap' | 'borderRadius' | 'borderWidth';
   value: number;
   unit: string;
   tokenReference?: string; // Token Studio token reference

@@ -145,11 +145,28 @@ on('save-config', async (msg: RepoConfig) => {
       // Check for duration
       if (val.match(/^\d+(\.\d+)?(ms|s)$/) || ps.includes('duration')) return 'duration';
       
-      // Check for dimension
+      // Check for border-radius specifically (before general dimension check)
+      if (
+        ps.includes('radius') || 
+        ps.includes('corner') || 
+        ps.includes('rounded') ||
+        ps.includes('borderradius')
+      ) return 'borderRadius';
+      
+      // Check for border-width specifically
+      if (
+        (ps.includes('border') && (ps.includes('width') || ps.includes('weight'))) ||
+        ps.includes('stroke') && ps.includes('weight')
+      ) return 'borderWidth';
+      
+      // Check for dimension/spacing
       if (
         val.match(/^-?\d+(\.\d+)?(px|rem|em|pt|pc|in|cm|mm|q|vh|vw|vmin|vmax|%)$/) ||
-        ps.includes('size') || ps.includes('spacing') || ps.includes('radius') ||
-        ps.includes('gap') || ps.includes('padding') || ps.includes('margin')
+        ps.includes('size') || ps.includes('spacing') || ps.includes('space') ||
+        ps.includes('gap') || ps.includes('padding') || ps.includes('margin') ||
+        ps.includes('sizing') || ps.includes('dimension') ||
+        // Common spacing naming patterns like "1x", "2x", "4x"
+        ps.match(/\d+x$/)
       ) return 'dimension';
       
       // Check for typography
@@ -160,21 +177,30 @@ on('save-config', async (msg: RepoConfig) => {
       }
       
       // Check for shadow
-      if (ps.includes('shadow')) return 'shadow';
+      if (ps.includes('shadow') || ps.includes('elevation')) return 'shadow';
       
-      // Check for border
-      if (ps.includes('border')) return 'border';
+      // Check for border (after more specific border-radius and border-width)
+      if (ps.includes('border') && !ps.includes('radius')) return 'border';
     } else if (typeof val === 'number') {
       // Infer from path for numbers
-      if (ps.includes('weight')) return 'fontWeight';
+      if (ps.includes('radius') || ps.includes('corner') || ps.includes('rounded')) return 'borderRadius';
+      if (ps.includes('border') && ps.includes('width')) return 'borderWidth';
+      if (ps.includes('stroke') && ps.includes('weight')) return 'borderWidth';
+      if (ps.includes('weight') && ps.includes('font')) return 'fontWeight';
       if (ps.includes('opacity') || ps.includes('alpha')) return 'number';
       if (ps.includes('z-index') || ps.includes('zindex')) return 'number';
+      // Check for spacing patterns
+      if (
+        ps.includes('spacing') || ps.includes('space') || ps.includes('gap') ||
+        ps.includes('padding') || ps.includes('margin') || ps.includes('size') ||
+        ps.match(/\d+x$/)
+      ) return 'dimension';
       return 'number';
     } else if (typeof val === 'object' && val !== null) {
       // Composite tokens
       if (ps.includes('shadow') || val.blur !== undefined || val.spread !== undefined) return 'shadow';
       if (ps.includes('typography') || val.fontFamily !== undefined) return 'typography';
-      if (ps.includes('border') || val.width !== undefined && val.style !== undefined) return 'border';
+      if (ps.includes('border') || (val.width !== undefined && val.style !== undefined)) return 'border';
     }
     return 'string';
   };
@@ -593,7 +619,8 @@ on('get-component-usage', async (msg: { componentId: string }) => {
 on('navigate-to-component', async (msg: { componentId: string }) => {
   try {
     const { componentId } = msg;
-    const node = figma.getNodeById(componentId);
+    // Use async version for dynamic-page document access
+    const node = await figma.getNodeByIdAsync(componentId);
     
     if (node && 'type' in node) {
       // Handle nodes that might be on different pages

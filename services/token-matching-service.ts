@@ -89,12 +89,26 @@ export class TokenMatchingService {
       case 'shadow':
         matchDetails.push(...this.matchEffects(token, component));
         break;
+      case 'borderRadius':
+        matchDetails.push(...this.matchSpacing(token, component, 'borderRadius'));
+        break;
+      case 'borderWidth':
+        matchDetails.push(...this.matchSpacing(token, component, 'borderWidth'));
+        break;
       default:
         // Try to match by inferring type from value AND path
         matchDetails.push(...this.matchByValue(token, component));
         // Also try spacing matching for tokens with spacing-related paths
         if (this.looksLikeSpacingToken(token)) {
           matchDetails.push(...this.matchSpacing(token, component));
+        }
+        // Try border-radius matching specifically
+        if (this.looksLikeBorderRadiusToken(token)) {
+          matchDetails.push(...this.matchSpacing(token, component, 'borderRadius'));
+        }
+        // Try border/stroke width matching
+        if (this.looksLikeBorderToken(token)) {
+          matchDetails.push(...this.matchSpacing(token, component, 'borderWidth'));
         }
         // Try effect matching for shadow-like paths
         if (this.looksLikeEffectToken(token)) {
@@ -336,29 +350,41 @@ export class TokenMatchingService {
 
   /**
    * Match spacing/dimension tokens
+   * @param filterType - Optional filter to only match specific spacing types (e.g., 'borderRadius', 'borderWidth')
    */
-  private matchSpacing(token: ParsedToken, component: ComponentProperties): MatchDetail[] {
+  private matchSpacing(token: ParsedToken, component: ComponentProperties, filterType?: string): MatchDetail[] {
     const matches: MatchDetail[] = [];
     const tokenPath = token.path.join('.');
     const tokenValue = this.normalizeDimension(token.value);
 
+    // Filter spacing properties if a type filter is specified
+    const spacingToCheck = filterType 
+      ? component.spacing.filter(s => s.type === filterType)
+      : component.spacing;
+
     // First pass: Match by token reference (Tokens Studio path matching)
-    for (const spacing of component.spacing) {
+    for (const spacing of spacingToCheck) {
       if (spacing.tokenReference) {
         // Clean up the token reference
         let refPath = spacing.tokenReference.trim();
         refPath = refPath.replace(/^["']|["']$/g, '');
         refPath = refPath.replace(/^[{]|[}]$/g, '');
         refPath = refPath.replace(/^\$/, '');
+        // Remove context prefix like "[horizontal] " for path comparison
+        refPath = refPath.replace(/^\[\w+\]\s*/, '');
         
         const normalizedRef = refPath.toLowerCase();
         const normalizedToken = tokenPath.toLowerCase();
         
+        // Format the property type for display - include the token reference for context
+        const displayType = this.formatSpacingType(spacing.type);
+        
         // Exact path match
         if (normalizedRef === normalizedToken) {
           matches.push({
-            property: `${spacing.type} (token ref)`,
+            property: `${displayType} (token ref)`,
             propertyType: 'spacing',
+            // Include token reference in matchedValue for UI to parse direction from
             matchedValue: `${spacing.value}${spacing.unit} ← ${spacing.tokenReference}`,
             tokenValue: tokenPath,
             confidence: 1.0
@@ -367,7 +393,7 @@ export class TokenMatchingService {
         // Partial path match
         else if (normalizedRef.includes(normalizedToken) || normalizedToken.includes(normalizedRef)) {
           matches.push({
-            property: `${spacing.type} (token ref)`,
+            property: `${displayType} (token ref)`,
             propertyType: 'spacing',
             matchedValue: `${spacing.value}${spacing.unit} ← ${spacing.tokenReference}`,
             tokenValue: tokenPath,
@@ -385,13 +411,14 @@ export class TokenMatchingService {
     // Second pass: Fall back to value matching
     if (tokenValue === null) return matches;
 
-    for (const spacing of component.spacing) {
+    for (const spacing of spacingToCheck) {
       const componentValue = spacing.value;
       const tolerance = 0.5; // Allow small differences for floating point
 
       if (Math.abs(tokenValue - componentValue) < tolerance) {
+        const displayType = this.formatSpacingType(spacing.type);
         matches.push({
-          property: spacing.type,
+          property: displayType,
           propertyType: 'spacing',
           matchedValue: `${spacing.value}${spacing.unit}`,
           tokenValue: String(token.value),
@@ -401,6 +428,22 @@ export class TokenMatchingService {
     }
 
     return matches;
+  }
+
+  /**
+   * Format spacing type for display
+   */
+  private formatSpacingType(type: string): string {
+    switch (type) {
+      case 'borderRadius':
+        return 'border-radius';
+      case 'borderWidth':
+        return 'border-width';
+      case 'gap':
+        return 'gap/spacing';
+      default:
+        return type;
+    }
   }
 
   /**
@@ -691,9 +734,37 @@ export class TokenMatchingService {
     const spacingKeywords = [
       'spacing', 'space', 'size', 'sizing', 'dimension',
       'width', 'height', 'padding', 'margin', 'gap',
-      'radius', 'border', 'inset', 'offset'
+      'radius', 'border', 'inset', 'offset',
+      // Additional keywords for common token naming patterns
+      'corner', 'round', 'stroke', 'weight',
+      // Numeric patterns like "1x", "2x", "4x" are common for spacing
+      '1x', '2x', '3x', '4x', '5x', '6x', '8x', '10x', '12x', '16x'
     ];
     return spacingKeywords.some(keyword => pathStr.includes(keyword));
+  }
+
+  /**
+   * Check if token path suggests it's a border-radius token
+   */
+  private looksLikeBorderRadiusToken(token: ParsedToken): boolean {
+    const pathStr = token.path.join('.').toLowerCase();
+    const radiusKeywords = [
+      'radius', 'corner', 'round', 'rounded', 'borderradius'
+    ];
+    return radiusKeywords.some(keyword => pathStr.includes(keyword));
+  }
+
+  /**
+   * Check if token path suggests it's a border/stroke token
+   */
+  private looksLikeBorderToken(token: ParsedToken): boolean {
+    const pathStr = token.path.join('.').toLowerCase();
+    const borderKeywords = [
+      'border', 'stroke', 'outline', 'line'
+    ];
+    // Exclude borderRadius which is handled separately
+    if (pathStr.includes('radius')) return false;
+    return borderKeywords.some(keyword => pathStr.includes(keyword));
   }
 
   /**

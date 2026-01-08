@@ -20,6 +20,90 @@ export class FigmaComponentService {
   
   // Tokens Studio plugin namespace
   private readonly TOKENS_STUDIO_NAMESPACE = 'tokens';
+  
+  // Enable debug logging to discover token keys
+  private readonly DEBUG_LOGGING = true;
+
+  /**
+   * Get ALL shared plugin data keys from a node (for debugging)
+   * This helps discover what keys Tokens Studio actually uses
+   */
+  private getAllTokenKeys(node: SceneNode): Record<string, string> {
+    const allKeys: Record<string, string> = {};
+    const namespaces = ['tokens', 'tokens-studio', 'tokensStudio', 'design-tokens', 'figma-tokens'];
+    
+    for (const namespace of namespaces) {
+      try {
+        const keys = node.getSharedPluginDataKeys(namespace);
+        for (const key of keys) {
+          const value = node.getSharedPluginData(namespace, key);
+          if (value && value.trim()) {
+            allKeys[`${namespace}:${key}`] = value;
+          }
+        }
+      } catch (e) {
+        // Namespace doesn't exist
+      }
+    }
+    
+    return allKeys;
+  }
+
+  /**
+   * Get Figma Variable binding for a property (modern approach)
+   * Tokens Studio can sync tokens to Figma Variables
+   */
+  private getVariableBinding(node: SceneNode, property: string): string | undefined {
+    try {
+      if (!('boundVariables' in node) || !node.boundVariables) {
+        return undefined;
+      }
+      
+      const boundVars = node.boundVariables as Record<string, any>;
+      const binding = boundVars[property];
+      
+      if (binding) {
+        // Handle array bindings (e.g., fills[0])
+        const bindingToCheck = Array.isArray(binding) ? binding[0] : binding;
+        
+        if (bindingToCheck?.id) {
+          try {
+            const variable = figma.variables.getVariableById(bindingToCheck.id);
+            if (variable?.name) {
+              // Variable names often contain the token path
+              if (this.DEBUG_LOGGING) {
+                console.log(`[Variable] ${node.name}.${property} → ${variable.name}`);
+              }
+              return variable.name;
+            }
+          } catch (e) {
+            // Variable might not be accessible
+          }
+        }
+      }
+    } catch (e) {
+      // Bound variables not available
+    }
+    return undefined;
+  }
+
+  /**
+   * Clean token reference value - remove surrounding quotes that Tokens Studio may include
+   */
+  private cleanTokenReference(value: string): string {
+    let cleaned = value.trim();
+    // Remove multiple layers of quotes (Tokens Studio stores values like "ids.spacing.1x" with quotes)
+    while (
+      (cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+      (cleaned.startsWith("'") && cleaned.endsWith("'"))
+    ) {
+      cleaned = cleaned.slice(1, -1);
+    }
+    // Also remove braces and $ prefix if present
+    cleaned = cleaned.replace(/^[{]|[}]$/g, '');
+    cleaned = cleaned.replace(/^\$/, '');
+    return cleaned.trim();
+  }
 
   /**
    * Get Tokens Studio token reference from node plugin data
@@ -33,7 +117,12 @@ export class FigmaComponentService {
         try {
           const sharedData = node.getSharedPluginData(namespace, key);
           if (sharedData && sharedData.trim()) {
-            return sharedData;
+            // Clean the value - remove surrounding quotes
+            const cleanedValue = this.cleanTokenReference(sharedData);
+            if (this.DEBUG_LOGGING) {
+              console.log(`[TokenRef] Found ${namespace}:${key} = "${cleanedValue}" on ${node.name}`);
+            }
+            return cleanedValue;
           }
         } catch (e) {
           // Namespace might not exist, continue
@@ -44,7 +133,7 @@ export class FigmaComponentService {
       try {
         const directData = node.getPluginData(key);
         if (directData && directData.trim()) {
-          return directData;
+          return this.cleanTokenReference(directData);
         }
       } catch (e) {
         // Plugin data might not exist, which is fine
@@ -131,55 +220,191 @@ export class FigmaComponentService {
 
   /**
    * Extract Tokens Studio token references for spacing/dimensions
+   * Tokens Studio uses various keys - this is comprehensive based on their plugin
    */
   private getSpacingTokenReference(node: SceneNode, property: string): string | undefined {
-    // Try different key formats for spacing properties
+    // Comprehensive key mapping based on Tokens Studio patterns
+    // Keys are checked in order of likelihood
     const keyMap: Record<string, string[]> = {
-      'width': ['width', 'sizing', 'sizing.width'],
-      'height': ['height', 'sizing', 'sizing.height'],
-      'padding': ['padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'spacing.padding'],
-      'paddingTop': ['paddingTop', 'padding-top', 'spacing.paddingTop'],
-      'paddingRight': ['paddingRight', 'padding-right', 'spacing.paddingRight'],
-      'paddingBottom': ['paddingBottom', 'padding-bottom', 'spacing.paddingBottom'],
-      'paddingLeft': ['paddingLeft', 'padding-left', 'spacing.paddingLeft'],
-      'gap': ['itemSpacing', 'gap', 'spacing', 'spacing.gap'],
-      'borderRadius': ['borderRadius', 'border-radius', 'radius', 'cornerRadius'],
-      'borderWidth': ['borderWidth', 'border-width', 'strokeWidth']
+      // Sizing/dimensions
+      'width': ['width', 'sizing', 'dimension', 'sizing.width', 'dimensions.width'],
+      'height': ['height', 'sizing', 'dimension', 'sizing.height', 'dimensions.height'],
+      
+      // Padding - Tokens Studio often uses these specific keys
+      'padding': ['padding', 'spacing', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'],
+      'paddingTop': ['paddingTop', 'verticalPadding', 'padding', 'spacing'],
+      'paddingRight': ['paddingRight', 'horizontalPadding', 'padding', 'spacing'],
+      'paddingBottom': ['paddingBottom', 'verticalPadding', 'padding', 'spacing'],
+      'paddingLeft': ['paddingLeft', 'horizontalPadding', 'padding', 'spacing'],
+      'verticalPadding': ['verticalPadding', 'paddingTop', 'paddingBottom', 'padding', 'spacing'],
+      'horizontalPadding': ['horizontalPadding', 'paddingLeft', 'paddingRight', 'padding', 'spacing'],
+      
+      // Gap/Item spacing - common in auto-layout
+      'gap': ['itemSpacing', 'spacing', 'gap', 'counterAxisSpacing'],
+      'itemSpacing': ['itemSpacing', 'spacing', 'gap'],
+      'counterAxisSpacing': ['counterAxisSpacing', 'spacing'],
+      
+      // Border radius - can be uniform or per-corner
+      'borderRadius': ['borderRadius', 'borderRadiusTopLeft', 'borderRadiusTopRight', 'borderRadiusBottomRight', 'borderRadiusBottomLeft', 'radius', 'cornerRadius'],
+      'borderRadiusTopLeft': ['borderRadiusTopLeft', 'borderRadius', 'radius'],
+      'borderRadiusTopRight': ['borderRadiusTopRight', 'borderRadius', 'radius'],
+      'borderRadiusBottomRight': ['borderRadiusBottomRight', 'borderRadius', 'radius'],
+      'borderRadiusBottomLeft': ['borderRadiusBottomLeft', 'borderRadius', 'radius'],
+      
+      // Border width
+      'borderWidth': ['borderWidth', 'strokeWeight', 'borderWidthTop', 'borderWidthRight', 'borderWidthBottom', 'borderWidthLeft', 'border'],
+      'strokeWeight': ['strokeWeight', 'borderWidth', 'border'],
+      
+      // Generic dimension
+      'dimension': ['dimension', 'spacing', 'sizing', 'size']
     };
     
     const keys = keyMap[property] || [property];
     
+    // First try plugin data
     for (const key of keys) {
       const ref = this.getTokenReference(node, key);
       if (ref) return ref;
     }
+    
+    // Then try Figma Variable bindings (modern approach)
+    const variableRef = this.getVariableBinding(node, property);
+    if (variableRef) return variableRef;
+    
+    return undefined;
+  }
+
+  /**
+   * Extract border radius token references specifically
+   * Handles both uniform radius and per-corner radius
+   */
+  private getBorderRadiusTokenReference(node: SceneNode): string | undefined {
+    // Keys that Tokens Studio uses for border radius
+    const keys = [
+      'borderRadius',
+      'borderRadiusTopLeft',
+      'borderRadiusTopRight', 
+      'borderRadiusBottomRight',
+      'borderRadiusBottomLeft',
+      'radius',
+      'cornerRadius',
+      'topLeftRadius',
+      'topRightRadius',
+      'bottomRightRadius',
+      'bottomLeftRadius'
+    ];
+    
+    for (const key of keys) {
+      const ref = this.getTokenReference(node, key);
+      if (ref) {
+        if (this.DEBUG_LOGGING) {
+          console.log(`[BorderRadius] Found ${key} = "${ref}" on ${node.name}`);
+        }
+        return ref;
+      }
+    }
+    
+    // Check Figma Variable binding for corner radius
+    const variableRef = this.getVariableBinding(node, 'cornerRadius');
+    if (variableRef) return variableRef;
+    
+    return undefined;
+  }
+
+  /**
+   * Extract border/stroke width token reference
+   */
+  private getBorderWidthTokenReference(node: SceneNode): string | undefined {
+    const keys = [
+      'borderWidth',
+      'strokeWeight', 
+      'borderWidthTop',
+      'borderWidthRight',
+      'borderWidthBottom',
+      'borderWidthLeft',
+      'border',
+      'strokeWidth'
+    ];
+    
+    for (const key of keys) {
+      const ref = this.getTokenReference(node, key);
+      if (ref) {
+        if (this.DEBUG_LOGGING) {
+          console.log(`[BorderWidth] Found ${key} = "${ref}" on ${node.name}`);
+        }
+        return ref;
+      }
+    }
+    
+    // Check Figma Variable binding
+    const variableRef = this.getVariableBinding(node, 'strokeWeight');
+    if (variableRef) return variableRef;
     
     return undefined;
   }
 
   /**
    * Extract Tokens Studio token references for effects/shadows
+   * Tokens Studio typically uses 'boxShadow' as the primary key
    */
   private getEffectTokenReference(node: SceneNode, effectIndex: number): string | undefined {
-    // Try different key formats for effect properties
+    // Keys that Tokens Studio uses for effects/shadows
+    // boxShadow is the primary key used by Tokens Studio
     const keys = [
-      `effects[${effectIndex}]`,
-      `effect[${effectIndex}]`,
-      `boxShadow[${effectIndex}]`,
-      'boxShadow',
-      'shadow',
+      'boxShadow',           // Primary Tokens Studio key
+      'shadow',              // Alternative
+      `boxShadow[${effectIndex}]`,  // Indexed if multiple
+      `shadow[${effectIndex}]`,
       'effects',
       'effect',
+      `effects[${effectIndex}]`,
+      `effect[${effectIndex}]`,
       'dropShadow',
-      'innerShadow'
+      'innerShadow',
+      'elevation',           // Material Design style
+      'shadowColor',
+      'shadowOffset',
+      'shadowRadius',
+      'shadowSpread'
     ];
     
     for (const key of keys) {
       const ref = this.getTokenReference(node, key);
-      if (ref) return ref;
+      if (ref) {
+        if (this.DEBUG_LOGGING) {
+          console.log(`[Effect] Found ${key} = "${ref}" on ${node.name}`);
+        }
+        return ref;
+      }
     }
     
+    // Check Figma Variable binding
+    const variableRef = this.getVariableBinding(node, 'effects');
+    if (variableRef) return variableRef;
+    
     return undefined;
+  }
+
+  /**
+   * Log all token data found on a node (for debugging)
+   * Call this to discover what keys Tokens Studio actually uses
+   */
+  private logNodeTokenData(node: SceneNode): void {
+    if (!this.DEBUG_LOGGING) return;
+    
+    const allKeys = this.getAllTokenKeys(node);
+    if (Object.keys(allKeys).length > 0) {
+      console.log(`\n[TokenData] Node: "${node.name}" (${node.type})`);
+      for (const [key, value] of Object.entries(allKeys)) {
+        const cleaned = this.cleanTokenReference(value);
+        // Show cleaned value, and raw if different
+        if (cleaned !== value) {
+          console.log(`  ${key} = ${cleaned} (raw: ${value})`);
+        } else {
+          console.log(`  ${key} = ${cleaned}`);
+        }
+      }
+    }
   }
 
   /**
@@ -541,13 +766,20 @@ export class FigmaComponentService {
   }
 
   /**
-   * Extract spacing properties
+   * Extract spacing properties including border-radius and border-width
    */
   extractSpacing(node: SceneNode): SpacingProperty[] {
     const spacing: SpacingProperty[] = [];
+    
+    // Log all token data for debugging
+    this.logNodeTokenData(node);
 
-    if (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET') {
-      const frame = node as ComponentNode | ComponentSetNode;
+    // Check if this is a frame-like node (has layout properties)
+    const isFrameLike = node.type === 'COMPONENT' || node.type === 'COMPONENT_SET' || 
+                        node.type === 'FRAME' || node.type === 'INSTANCE';
+
+    if (isFrameLike) {
+      const frame = node as ComponentNode | ComponentSetNode | FrameNode | InstanceNode;
 
       // Width and height with token references
       const widthToken = this.getSpacingTokenReference(node, 'width');
@@ -568,18 +800,36 @@ export class FigmaComponentService {
 
       // Padding (only for frames with auto-layout)
       if ('paddingTop' in frame && typeof frame.paddingTop === 'number') {
-        const paddingTopToken = this.getSpacingTokenReference(node, 'paddingTop');
-        const paddingRightToken = this.getSpacingTokenReference(node, 'paddingRight');
-        const paddingBottomToken = this.getSpacingTokenReference(node, 'paddingBottom');
-        const paddingLeftToken = this.getSpacingTokenReference(node, 'paddingLeft');
+        // Check for horizontalPadding and verticalPadding tokens first
+        const horizontalPaddingToken = this.getSpacingTokenReference(node, 'horizontalPadding');
+        const verticalPaddingToken = this.getSpacingTokenReference(node, 'verticalPadding');
         const paddingToken = this.getSpacingTokenReference(node, 'padding');
+        
+        // Individual padding tokens - check specific keys first, then fall back
+        const paddingTopSpecific = this.getSpacingTokenReference(node, 'paddingTop');
+        const paddingRightSpecific = this.getSpacingTokenReference(node, 'paddingRight');
+        const paddingBottomSpecific = this.getSpacingTokenReference(node, 'paddingBottom');
+        const paddingLeftSpecific = this.getSpacingTokenReference(node, 'paddingLeft');
+        
+        // Helper to format token ref with context
+        const formatWithContext = (token: string | undefined, context: string) => {
+          return token ? `[${context}] ${token}` : undefined;
+        };
+        
+        // Determine token and context for each padding side
+        const getPaddingToken = (specific: string | undefined, grouped: string | undefined, groupContext: string) => {
+          if (specific) return specific;
+          if (grouped) return formatWithContext(grouped, groupContext);
+          if (paddingToken) return formatWithContext(paddingToken, 'all');
+          return undefined;
+        };
         
         if (frame.paddingTop) {
           spacing.push({
             type: 'padding',
             value: frame.paddingTop,
             unit: 'px',
-            tokenReference: paddingTopToken || paddingToken
+            tokenReference: getPaddingToken(paddingTopSpecific, verticalPaddingToken, 'vertical')
           });
         }
         if (frame.paddingRight) {
@@ -587,7 +837,7 @@ export class FigmaComponentService {
             type: 'padding',
             value: frame.paddingRight,
             unit: 'px',
-            tokenReference: paddingRightToken || paddingToken
+            tokenReference: getPaddingToken(paddingRightSpecific, horizontalPaddingToken, 'horizontal')
           });
         }
         if (frame.paddingBottom) {
@@ -595,7 +845,7 @@ export class FigmaComponentService {
             type: 'padding',
             value: frame.paddingBottom,
             unit: 'px',
-            tokenReference: paddingBottomToken || paddingToken
+            tokenReference: getPaddingToken(paddingBottomSpecific, verticalPaddingToken, 'vertical')
           });
         }
         if (frame.paddingLeft) {
@@ -603,18 +853,16 @@ export class FigmaComponentService {
             type: 'padding',
             value: frame.paddingLeft,
             unit: 'px',
-            tokenReference: paddingLeftToken || paddingToken
+            tokenReference: getPaddingToken(paddingLeftSpecific, horizontalPaddingToken, 'horizontal')
           });
         }
       }
 
       // Item spacing (for auto-layout)
-      if (
-        'itemSpacing' in frame &&
-        typeof frame.itemSpacing === 'number' &&
-        frame.itemSpacing
-      ) {
-        const gapToken = this.getSpacingTokenReference(node, 'gap');
+      if ('itemSpacing' in frame && typeof frame.itemSpacing === 'number' && frame.itemSpacing) {
+        const gapToken = this.getSpacingTokenReference(node, 'itemSpacing') || 
+                        this.getSpacingTokenReference(node, 'gap') ||
+                        this.getSpacingTokenReference(node, 'spacing');
         spacing.push({
           type: 'gap',
           value: frame.itemSpacing,
@@ -623,33 +871,92 @@ export class FigmaComponentService {
         });
       }
       
-      // Border radius with token reference
-      if ('cornerRadius' in frame && typeof frame.cornerRadius === 'number' && frame.cornerRadius > 0) {
-        const radiusToken = this.getSpacingTokenReference(node, 'borderRadius');
+      // Counter-axis spacing (for wrapped auto-layout)
+      if ('counterAxisSpacing' in frame && typeof frame.counterAxisSpacing === 'number' && frame.counterAxisSpacing) {
+        const counterSpacingToken = this.getSpacingTokenReference(node, 'counterAxisSpacing');
         spacing.push({
-          type: 'padding', // Using padding type for now, could add 'borderRadius' to SpacingProperty type
+          type: 'gap',
+          value: frame.counterAxisSpacing as number,
+          unit: 'px',
+          tokenReference: counterSpacingToken
+        });
+      }
+      
+      // Border radius - use dedicated method
+      if ('cornerRadius' in frame) {
+        const radiusToken = this.getBorderRadiusTokenReference(node);
+        
+        // Handle uniform radius
+        if (typeof frame.cornerRadius === 'number' && frame.cornerRadius > 0) {
+        spacing.push({
+          type: 'borderRadius',
           value: frame.cornerRadius,
           unit: 'px',
           tokenReference: radiusToken
         });
+        }
+        // Handle mixed/per-corner radius
+        else if (frame.cornerRadius === figma.mixed) {
+          // Get individual corner radii if available
+          if ('topLeftRadius' in frame && typeof frame.topLeftRadius === 'number' && frame.topLeftRadius > 0) {
+            spacing.push({
+              type: 'borderRadius' ,
+              value: frame.topLeftRadius,
+              unit: 'px',
+              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusTopLeft') || radiusToken
+            });
+          }
+          if ('topRightRadius' in frame && typeof frame.topRightRadius === 'number' && frame.topRightRadius > 0) {
+            spacing.push({
+              type: 'borderRadius' ,
+              value: frame.topRightRadius,
+              unit: 'px',
+              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusTopRight') || radiusToken
+            });
+          }
+          if ('bottomRightRadius' in frame && typeof frame.bottomRightRadius === 'number' && frame.bottomRightRadius > 0) {
+            spacing.push({
+              type: 'borderRadius' ,
+              value: frame.bottomRightRadius,
+              unit: 'px',
+              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusBottomRight') || radiusToken
+            });
+          }
+          if ('bottomLeftRadius' in frame && typeof frame.bottomLeftRadius === 'number' && frame.bottomLeftRadius > 0) {
+            spacing.push({
+              type: 'borderRadius' ,
+              value: frame.bottomLeftRadius,
+              unit: 'px',
+              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusBottomLeft') || radiusToken
+            });
+          }
+        }
       }
-    } else if (node.type === 'INSTANCE') {
-      const instance = node as InstanceNode;
-      const widthToken = this.getSpacingTokenReference(node, 'width');
-      const heightToken = this.getSpacingTokenReference(node, 'height');
       
-      spacing.push({
-        type: 'width',
-        value: instance.width,
-        unit: 'px',
-        tokenReference: widthToken
-      });
-      spacing.push({
-        type: 'height',
-        value: instance.height,
-        unit: 'px',
-        tokenReference: heightToken
-      });
+      // Border/stroke width
+      if ('strokeWeight' in frame && typeof frame.strokeWeight === 'number' && frame.strokeWeight > 0) {
+        const borderWidthToken = this.getBorderWidthTokenReference(node);
+        spacing.push({
+          type: 'borderWidth' ,
+          value: frame.strokeWeight,
+          unit: 'px',
+          tokenReference: borderWidthToken
+        });
+      }
+    }
+    // Handle other nodes that might have border radius (rectangles, etc.)
+    else if ('cornerRadius' in node) {
+      const radiusToken = this.getBorderRadiusTokenReference(node);
+      const rectNode = node as RectangleNode;
+      
+      if (typeof rectNode.cornerRadius === 'number' && rectNode.cornerRadius > 0) {
+        spacing.push({
+          type: 'borderRadius' ,
+          value: rectNode.cornerRadius,
+          unit: 'px',
+          tokenReference: radiusToken
+        });
+      }
     }
 
     return spacing;
