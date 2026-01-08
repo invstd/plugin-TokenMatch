@@ -134,6 +134,171 @@ Values: "ids.color.element.primary.default" (plain string, no braces or $)
 
 ---
 
+## How Token Reference Discovery Works
+
+### Overview
+
+When Tokens Studio applies a design token to a Figma element, it does two things:
+1. **Resolves the token value** and applies it to the Figma property (e.g., sets fill color to `#267853`)
+2. **Stores a reference** to the original token path in Figma's plugin data system
+
+We read this stored reference to determine which token was applied to which property.
+
+### Figma Plugin Data API
+
+Figma provides two types of plugin data storage:
+
+1. **Plugin Data** (`node.getPluginData(key)`)
+   - Private to each plugin
+   - Only accessible by the plugin that wrote it
+   - We cannot read other plugins' private data
+
+2. **Shared Plugin Data** (`node.getSharedPluginData(namespace, key)`)
+   - Accessible by any plugin that knows the namespace
+   - Tokens Studio uses this for interoperability
+   - **This is what we use to read token references**
+
+### The Token Reference Extraction Process
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Figma Node (e.g., Rectangle)                │
+├─────────────────────────────────────────────────────────────────┤
+│  Visual Properties:                                             │
+│    fills[0].color = { r: 0.15, g: 0.47, b: 0.33 }  (#267853)   │
+│    strokes[0].color = { r: 0, g: 0, b: 0 }                     │
+│                                                                 │
+│  Shared Plugin Data (namespace: "tokens"):                      │
+│    "fill" → "ids.color.element.primary.default"                │
+│    "stroke" → "ids.color.border.default"                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Step 1: Get Shared Plugin Data Keys**
+```typescript
+const keys = node.getSharedPluginDataKeys('tokens');
+// Returns: ['fill', 'stroke', 'fontSize', ...]
+```
+
+**Step 2: Read Token Reference for Each Key**
+```typescript
+const tokenPath = node.getSharedPluginData('tokens', 'fill');
+// Returns: "ids.color.element.primary.default"
+```
+
+**Step 3: Associate with Visual Property**
+```typescript
+// We now know:
+// - The node's fill color is #267853
+// - That color came from token "ids.color.element.primary.default"
+```
+
+### Property Key Mapping
+
+Tokens Studio uses these keys in the `tokens` namespace:
+
+| Figma Property | Plugin Data Key(s) |
+|----------------|-------------------|
+| Fill color | `fill`, `fills`, `fillColor` |
+| Stroke color | `stroke`, `strokes`, `strokeColor`, `borderColor` |
+| Font family | `fontFamily`, `fontFamilies` |
+| Font size | `fontSize`, `fontSizes` |
+| Font weight | `fontWeight`, `fontWeights` |
+| Line height | `lineHeight`, `lineHeights` |
+| Letter spacing | `letterSpacing` |
+| Padding | `padding`, `paddingTop`, `paddingRight`, `paddingBottom`, `paddingLeft` |
+| Gap/Spacing | `itemSpacing`, `gap`, `spacing` |
+| Border radius | `borderRadius`, `cornerRadius`, `radius` |
+| Box shadow | `boxShadow`, `shadow`, `effects` |
+| Width/Height | `width`, `height`, `sizing` |
+
+### Namespaces We Check
+
+While `tokens` is the primary namespace, we also check alternatives for compatibility:
+
+```typescript
+const namespaces = [
+  'tokens',           // Primary - Tokens Studio standard
+  'tokens-studio',    // Alternative
+  'tokensStudio',     // CamelCase variant
+  'figma-tokens',     // Legacy
+  'design-tokens',    // Generic
+];
+```
+
+### Code Implementation
+
+**In `FigmaComponentService.ts`:**
+
+```typescript
+private getTokenReference(node: SceneNode, key: string): string | undefined {
+  const namespaces = ['tokens', 'tokens-studio', 'tokensStudio', 'design-tokens'];
+  
+  for (const namespace of namespaces) {
+    try {
+      const sharedData = node.getSharedPluginData(namespace, key);
+      if (sharedData && sharedData.trim()) {
+        return sharedData;  // e.g., "ids.color.element.primary.default"
+      }
+    } catch (e) {
+      // Namespace might not exist, continue
+    }
+  }
+  return undefined;
+}
+```
+
+**Property-specific extractors try multiple key variations:**
+
+```typescript
+private getFillTokenReferences(node: SceneNode, fillIndex: number): string | undefined {
+  const keys = [
+    `fills[${fillIndex}]`,
+    `fill[${fillIndex}]`,
+    'fill',
+    'fills',
+    'fillColor'
+  ];
+  
+  for (const key of keys) {
+    const ref = this.getTokenReference(node, key);
+    if (ref) return ref;
+  }
+  return undefined;
+}
+```
+
+### Matching Process
+
+Once we have token references, matching is straightforward:
+
+```
+User searches for: "ids.color.element.primary.default"
+                            ↓
+We scan all components and their children
+                            ↓
+For each node with fills/strokes:
+  - Extract token reference from plugin data
+  - Compare with search token path
+                            ↓
+Match found when paths match (exact or partial)
+```
+
+### Fallback: Value-Based Matching
+
+If no token reference exists (component wasn't tokenized via Tokens Studio):
+
+1. We extract the resolved value (e.g., `#267853`)
+2. We compare against the token's resolved value
+3. Match with lower confidence (0.7 vs 1.0 for reference match)
+
+This is less reliable because:
+- Multiple tokens might resolve to the same color
+- Colors might be manually set to match a token value
+- Rounding differences in color values
+
+---
+
 ## Implementation Plan
 
 ### Phase 3: Update Component Scanner
