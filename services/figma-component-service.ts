@@ -17,6 +17,92 @@ import {
 
 export class FigmaComponentService {
   private errors: ComponentScanError[] = [];
+  
+  // Tokens Studio plugin namespace
+  private readonly TOKENS_STUDIO_NAMESPACE = 'tokens';
+
+  /**
+   * Get Tokens Studio token reference from node plugin data
+   */
+  private getTokenReference(node: SceneNode, key: string): string | undefined {
+    try {
+      // Tokens Studio uses different namespaces - try common ones
+      const namespaces = ['tokens', 'tokens-studio', 'tokensStudio', 'design-tokens'];
+      
+      for (const namespace of namespaces) {
+        try {
+          const sharedData = node.getSharedPluginData(namespace, key);
+          if (sharedData && sharedData.trim()) {
+            return sharedData;
+          }
+        } catch (e) {
+          // Namespace might not exist, continue
+        }
+      }
+      
+      // Try without namespace (direct key)
+      try {
+        const directData = node.getPluginData(key);
+        if (directData && directData.trim()) {
+          return directData;
+        }
+      } catch (e) {
+        // Plugin data might not exist, which is fine
+      }
+    } catch (error) {
+      // Plugin data might not exist, which is fine
+    }
+    return undefined;
+  }
+
+  /**
+   * Extract Tokens Studio token references for fills
+   * Tokens Studio stores fill token references in various formats
+   */
+  private getFillTokenReferences(node: SceneNode, fillIndex: number): string | undefined {
+    // Try different key formats that Tokens Studio might use
+    const keys = [
+      `fills[${fillIndex}]`,
+      `fill[${fillIndex}]`,
+      `fills.${fillIndex}`,
+      `fill.${fillIndex}`,
+      'fill',
+      'fills',
+      `fillColor`,
+      `fillColor[${fillIndex}]`
+    ];
+    
+    for (const key of keys) {
+      const ref = this.getTokenReference(node, key);
+      if (ref) return ref;
+    }
+    
+    return undefined;
+  }
+
+  /**
+   * Extract Tokens Studio token references for strokes
+   */
+  private getStrokeTokenReferences(node: SceneNode, strokeIndex: number): string | undefined {
+    // Try different key formats that Tokens Studio might use
+    const keys = [
+      `strokes[${strokeIndex}]`,
+      `stroke[${strokeIndex}]`,
+      `strokes.${strokeIndex}`,
+      `stroke.${strokeIndex}`,
+      'stroke',
+      'strokes',
+      `strokeColor`,
+      `strokeColor[${strokeIndex}]`
+    ];
+    
+    for (const key of keys) {
+      const ref = this.getTokenReference(node, key);
+      if (ref) return ref;
+    }
+    
+    return undefined;
+  }
 
   /**
    * Scan all components in the document
@@ -203,10 +289,12 @@ export class FigmaComponentService {
       effects: []
     };
 
-    // Extract colors (fills and strokes)
+    // Extract colors (fills and strokes) - includes token references
+    // extractColors already handles the node itself, and we'll get children separately
     properties.colors = this.extractColors(node);
 
-    // Extract typography
+    // Extract typography - includes token references
+    // extractTypography already recursively checks children
     properties.typography = this.extractTypography(node);
 
     // Extract spacing
@@ -259,10 +347,13 @@ export class FigmaComponentService {
 
     // Extract fills
     if ('fills' in node && Array.isArray(node.fills)) {
-      for (const fill of node.fills) {
+      for (let i = 0; i < node.fills.length; i++) {
+        const fill = node.fills[i];
         if (fill.type === 'SOLID') {
           const opacity = fill.opacity ?? 1;
           const color = this.rgbaToColor(fill.color, opacity);
+          const tokenRef = this.getFillTokenReferences(node, i);
+          
           colors.push({
             type: 'fill',
             color: {
@@ -273,7 +364,8 @@ export class FigmaComponentService {
             },
             hex: color.hex,
             rgba: color.rgba,
-            opacity: opacity
+            opacity: opacity,
+            tokenReference: tokenRef
           });
         }
       }
@@ -281,10 +373,13 @@ export class FigmaComponentService {
 
     // Extract strokes
     if ('strokes' in node && Array.isArray(node.strokes)) {
-      for (const stroke of node.strokes) {
+      for (let i = 0; i < node.strokes.length; i++) {
+        const stroke = node.strokes[i];
         if (stroke.type === 'SOLID') {
           const opacity = stroke.opacity ?? 1;
           const color = this.rgbaToColor(stroke.color, opacity);
+          const tokenRef = this.getStrokeTokenReferences(node, i);
+          
           colors.push({
             type: 'stroke',
             color: {
@@ -295,7 +390,8 @@ export class FigmaComponentService {
             },
             hex: color.hex,
             rgba: color.rgba,
-            opacity: opacity
+            opacity: opacity,
+            tokenReference: tokenRef
           });
         }
       }
@@ -316,6 +412,16 @@ export class FigmaComponentService {
       // Load fonts if needed
       if (typeof textNode.fontName !== 'symbol') {
         const fontName = textNode.fontName;
+        
+        // Get Tokens Studio token references for typography
+        const fontFamilyToken = this.getTokenReference(textNode, 'fontFamily') || 
+                               this.getTokenReference(textNode, 'font-family');
+        const fontSizeToken = this.getTokenReference(textNode, 'fontSize') || 
+                             this.getTokenReference(textNode, 'font-size');
+        const fontWeightToken = this.getTokenReference(textNode, 'fontWeight') || 
+                               this.getTokenReference(textNode, 'font-weight');
+        // Use the first available token reference, or combine if multiple exist
+        const tokenRef = fontFamilyToken || fontSizeToken || fontWeightToken;
 
         typography.push({
           fontFamily: fontName.family,
@@ -338,12 +444,13 @@ export class FigmaComponentService {
             ? textNode.textDecoration
             : undefined,
         textCase:
-          typeof textNode.textCase === 'string' ? textNode.textCase : undefined
+          typeof textNode.textCase === 'string' ? textNode.textCase : undefined,
+        tokenReference: tokenRef
         });
       }
     }
 
-    // Recursively check children
+    // Recursively check children for typography (including token references)
     if ('children' in node) {
       for (const child of node.children) {
         typography.push(...this.extractTypography(child));

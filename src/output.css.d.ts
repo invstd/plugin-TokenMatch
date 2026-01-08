@@ -8,6 +8,7 @@ declare const styles: {
   readonly "blur": string;
   readonly "border": string;
   readonly "break-all": string;
+  readonly "container": string;
   readonly "contents": string;
   readonly "cursor-pointer": string;
   readonly "drop-shadow": string;
@@ -17,7 +18,9 @@ declare const styles: {
   readonly "font-bold": string;
   readonly "font-medium": string;
   readonly "gap-2": string;
+  readonly "grid": string;
   readonly "hidden": string;
+  readonly "inline": string;
   readonly "inline-block": string;
   readonly "inline-flex": string;
   readonly "items-center": string;
@@ -31,6 +34,7 @@ declare const styles: {
   readonly "px-2": string;
   readonly "py-1": string;
   readonly "relative": string;
+  readonly "resize": string;
   readonly "rounded": string;
   readonly "shadow": string;
   readonly "space-y-2": string;

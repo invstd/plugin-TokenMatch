@@ -4,236 +4,281 @@
 
 **What we have:**
 - ✅ GitHub API integration (authentication, branch fetching, file retrieval)
-- ✅ Basic UI with configuration persistence
+- ✅ Restyled UI using Figma components and styles
 - ✅ Token fetching from GitHub repositories
+- ✅ **Working token parser** - Supports W3C, Token Studio, and plain nested JSON formats
+- ✅ **Component scanning service** - Can scan all pages, current page, or selected nodes
+- ⚠️ **Basic matching logic (incomplete)** - Exact value matching exists in `main.ts` but:
+  - No UI to display results (results are emitted but never shown)
+  - Matching is inline in handler, not a dedicated service
+  - Only exact string comparisons (very limited)
 - ✅ TypeScript setup with proper types
+- ✅ Configuration persistence
 
 **What's missing:**
-- ❌ Token parsing (currently just displays raw JSON)
-- ❌ Figma component scanning
-- ❌ Matching engine
-- ❌ Results visualization
+- ❌ **Matching results UI** - No way to see which components matched
+- ❌ **Dedicated matching service** - Logic is scattered in main.ts handler
+- ❌ **Function to create component collection** - No way to copy matched components
+- ❌ **Improved matching algorithms** - Only exact matches, no color proximity, fuzzy matching, etc.
 
 ---
 
-## Plan Review & Feedback
+## Updated Roadmap: Token Matching Features
 
-### ✅ **Strengths of the Plan**
+### **Phase 1: Matching Results UI** (Current Priority)
+**Goal:** Build the missing UI to display matching results and refactor matching into a proper service
 
-1. **Well-structured phases** - Logical progression from foundation to advanced features
-2. **Clear separation of concerns** - Three main services (GitHub, Figma, Matching)
-3. **Realistic timeline** - 8 weeks is reasonable for the scope
-4. **Security considerations** - Addresses token storage and privacy
+**Tasks:**
+1. **Refactor matching logic into a service**
+   - Extract matching logic from `main.ts` handler into `services/token-matching-service.ts`
+   - Create `TokenMatchingService` class with proper methods
+   - Improve matching algorithms (handle color format variations, better typography matching)
+   - Return structured match results with confidence scores
 
-### ⚠️ **Potential Challenges & Recommendations**
+2. **Create matching results view**
+   - Add event listener in UI for `scan-result` events
+   - Add new UI state/view for displaying scan results
+   - Show list of matched components with their properties
+   - Display match details (which properties matched, match type)
+   - Use Figma UI components: `Stack`, `Text`, `Button`, `IconButton`
+   - No custom components - only use `@create-figma-plugin/ui` elements
 
-#### 1. **Figma API Limitations**
+2. **Component list display**
+   - Show component name, page, type (COMPONENT/INSTANCE)
+   - Display matched properties (e.g., "Color fill: #FF0000", "Font family: Inter")
+   - Add navigation button to jump to component in Figma
+   - Use Figma's native styling (CSS variables like `var(--figma-color-text)`)
 
-**Challenge:** Figma's plugin API has some limitations:
-- `figma.getLocalComponent()` doesn't exist - need to use `figma.root.findAll()` and filter
-- Component properties are accessed differently than described
-- No direct access to component instances in other files
+3. **Results filtering and search**
+   - Filter by component type
+   - Filter by page
+   - Search within results
+   - Use Figma `Textbox` and `Dropdown` components
 
-**Recommendation:**
-```typescript
-// Correct approach for component scanning
-function scanComponents() {
-  const components = figma.root.findAll(node => 
-    node.type === 'COMPONENT' || node.type === 'COMPONENT_SET'
-  );
-  return components;
-}
-```
+**Deliverable:** Complete matching results UI integrated into existing plugin interface
 
-#### 2. **Token Format Support**
+### **Phase 2: Component Collection & Copying** (Next Priority)
+**Goal:** Create a new section in the Figma file containing all matched components
 
-**Challenge:** Multiple token formats (JSON, YAML, CSS) require different parsers
+**Tasks:**
+1. **Create collection frame function**
+   - Add handler in `main.ts` for `create-component-collection` event
+   - Create a new frame on current page (or new page) to hold matched components
+   - Name frame appropriately (e.g., "Token Matches: {token-name}")
 
-**Recommendation:** Start with JSON (W3C Design Tokens format), then expand:
-- Phase 1: JSON only (W3C standard)
-- Phase 2: Add YAML support
-- Phase 3: Add CSS variable extraction
+2. **Copy matched components**
+   - For each matched component ID, get the node using `figma.getNodeById()`
+   - Clone the component using `node.clone()`
+   - Position cloned components in a grid layout
+   - Handle component instances vs. component definitions
+   - Add labels showing which token property matched
 
-#### 3. **Matching Algorithm Complexity**
+3. **Layout and organization**
+   - Arrange components in a grid (auto-layout frame)
+   - Group by page or component type
+   - Add section headers using text nodes
+   - Handle large numbers of matches (pagination or scrolling frame)
 
-**Challenge:** Fuzzy matching for colors/typography is non-trivial
+**Deliverable:** Working function to create organized collection of matched components
 
-**Recommendation:** Start simple, iterate:
-- **Phase 1:** Exact value matching
-- **Phase 2:** Color proximity (deltaE calculation)
-- **Phase 3:** Semantic name matching
-- **Phase 4:** ML-based matching (if needed)
+### **Phase 3: Enhanced Matching Algorithms** (Future)
+**Goal:** Improve matching accuracy and handle edge cases
 
-#### 4. **Performance Considerations**
+**Tasks:**
+1. **Color proximity matching**
+   - Implement deltaE color distance calculation
+   - Match colors within a tolerance threshold
+   - Handle different color formats (hex, rgb, rgba, hsl)
 
-**Challenge:** Large component libraries can be slow to scan
+2. **Semantic name matching**
+   - Match token names to component names/properties
+   - Handle naming conventions (camelCase, kebab-case, etc.)
+   - Fuzzy string matching for similar names
 
-**Recommendation:**
-- Implement progress reporting (already have UI for this)
-- Use `figma.notify()` for user feedback
-- Consider pagination/chunking for large scans
-- Cache component analysis results
+3. **Token alias resolution**
+   - Resolve token references before matching
+   - Handle nested aliases
+   - Show original token path vs. resolved value
 
-#### 5. **GitHub OAuth vs Personal Access Token**
+**Deliverable:** Improved matching with higher accuracy and fewer false negatives
 
-**Note:** The plan mentions "GitHub OAuth app" but current implementation uses PATs.
+### **Phase 4: Polish & UX Improvements** (Future)
+**Tasks:**
+- Progress indicators for long scans
+- Error handling and user feedback
+- Performance optimization for large files
+- Export matching results (JSON/CSV)
+- Batch operations (scan multiple tokens at once)
 
-**Recommendation:** 
-- **Phase 1:** Keep PATs (simpler, already working)
-- **Phase 2:** Add OAuth option for better UX (optional)
-- OAuth requires a backend server, which adds complexity
-
----
-
-## Revised Implementation Strategy
-
-### **Phase 1: Enhanced Token Parsing** (Week 1-2)
-**Build on existing foundation:**
-- ✅ Extend `fetchRepoContents` to handle token file decoding
-- ✅ Create `TokenParser` class for W3C Design Tokens format
-- ✅ Parse nested token structures and aliases
-- ✅ Validate token syntax
-
-**Deliverable:** Parsed token objects ready for matching
-
-### **Phase 2: Component Scanning** (Week 2-3)
-**New functionality:**
-- ✅ Create `FigmaComponentService` class
-- ✅ Implement component discovery (all pages, all components)
-- ✅ Extract component properties:
-  - Color fills/strokes
-  - Text styles
-  - Effects (shadows, blurs)
-  - Spacing (padding, gaps)
-- ✅ Create component property mapping structure
-
-**Deliverable:** Component database with extracted properties
-
-### **Phase 3: Basic Matching Engine** (Week 3-4)
-**Core matching logic:**
-- ✅ Create `TokenMatchingEngine` class
-- ✅ Implement exact value matching
-- ✅ Simple color matching (hex/rgb comparison)
-- ✅ Typography matching (font family, size, weight)
-- ✅ Generate match confidence scores
-
-**Deliverable:** Working matching algorithm with results
-
-### **Phase 4: Results UI** (Week 4-5)
-**User interface:**
-- ✅ Expand UI to show matching results
-- ✅ Component list with match indicators
-- ✅ Token-to-component mapping visualization
-- ✅ Filtering and search capabilities
-- ✅ Export functionality (JSON/CSV)
-
-**Deliverable:** Complete user-facing matching interface
-
-### **Phase 5: Advanced Matching** (Week 5-6)
-**Enhanced algorithms:**
-- ✅ Color proximity matching (deltaE)
-- ✅ Semantic name matching
-- ✅ Handle token aliases and references
-- ✅ Pattern recognition for complex structures
-
-**Deliverable:** Improved matching accuracy
-
-### **Phase 6: Polish & Optimization** (Week 7-8)
-**Refinement:**
-- ✅ Performance optimization
-- ✅ Error handling improvements
-- ✅ User experience enhancements
-- ✅ Documentation and testing
-
-**Deliverable:** Production-ready plugin
+**Deliverable:** Production-ready, polished plugin experience
 
 ---
 
-## Technical Architecture Proposal
+## Technical Architecture
 
-### **Service Structure**
+### **Current Service Structure**
 
 ```typescript
-// services/github-token-service.ts
+// services/github-token-service.ts ✅
 class GitHubTokenService {
-  async fetchTokens(repoUrl, branch, filePath): Promise<TokenFile>
-  async parseTokens(rawContent, format): Promise<ParsedTokens>
-  validateTokenStructure(tokens): ValidationResult
+  async fetchBranches(owner, repo, token): Promise<string[]>
+  async fetchFileContents(owner, repo, branch, token, path): Promise<FileContent>
+  async detectTokenFiles(owner, repo, branch, token, directoryPath): Promise<string[]>
+  decodeBase64Content(content: string): string
+  parseGitHubUrl(url: string): { owner: string; repo: string } | null
 }
 
-// services/figma-component-service.ts
+// services/token-parser.ts ✅
+class TokenParser {
+  parse(tokenFile: TokenFile, filePath: string): ParsedTokens
+  getTokensByType(type: TokenType): ParsedToken[]
+  getTokenByPath(path: string[]): ParsedToken | undefined
+}
+
+// services/figma-component-service.ts ✅
 class FigmaComponentService {
-  scanAllComponents(): Component[]
-  extractComponentProperties(component): ComponentProperties
-  getComponentUsageStats(component): UsageStats
+  scanAllComponents(): ScanResult
+  scanCurrentPage(): ScanResult
+  scanNodes(nodes: readonly SceneNode[]): ScanResult
+  extractComponentProperties(node: SceneNode, pageName: string): ComponentProperties | null
+  getComponentUsageStats(componentId: string): ComponentUsageStats
 }
 
-// services/token-matching-engine.ts
-class TokenMatchingEngine {
-  matchTokensToComponents(tokens, components): MatchResult[]
-  calculateMatchConfidence(token, component): number
-  findBestMatches(token, components): MatchResult[]
-}
+// services/token-matching-service.ts ❌ MISSING
+// Currently: Matching logic is inline in main.ts handler (lines 514-588)
+// Needs: Dedicated service class with proper matching methods
 ```
 
-### **Data Structures**
+### **Current Matching Implementation (Needs Refactoring)**
+
+The matching logic currently exists inline in `main.ts` in the `scan-components-for-token` handler:
+- **Colors**: Exact hex/rgba string comparison (very limited)
+- **Typography**: Exact fontFamily/fontWeight string comparison
+- **Spacing**: Exact dimension value comparison (strips units)
+- **Effects**: Basic radius comparison for shadows
+
+**Issues:**
+- No handling of color format variations (rgb vs rgba, different hex formats)
+- No color proximity matching (deltaE)
+- No fuzzy string matching
+- Results are emitted but UI doesn't listen for them
+- No confidence scoring
+- Logic should be in a dedicated service class
+
+### **New Functions Needed**
 
 ```typescript
+// In src/main.ts - New event handlers
+on('create-component-collection', async (msg: { 
+  token: ParsedToken, 
+  componentIds: string[] 
+}) => {
+  // Create frame and copy matched components
+})
+
+// In src/ui.tsx - New UI state and components
+const [matchingResults, setMatchingResults] = useState<MatchResult | null>(null);
+const [showResults, setShowResults] = useState(false);
+
+// Results view using Figma UI components
+<Stack space="medium">
+  <Text>Matched Components ({results.totalMatches})</Text>
+  {results.matchingComponents.map(comp => (
+    <div> {/* Use Figma styling */}
+      <Text>{comp.name}</Text>
+      <Button onClick={() => navigateToComponent(comp.id)}>View</Button>
+    </div>
+  ))}
+  <Button onClick={() => createCollection(token, componentIds)}>
+    Create Collection
+  </Button>
+</Stack>
+```
+
+### **Data Structures (Already Defined)**
+
+```typescript
+// types/tokens.ts ✅
 interface ParsedToken {
   name: string;
   value: any;
-  type: 'color' | 'typography' | 'spacing' | 'effect';
+  type: TokenType;
   path: string[];
+  description?: string;
   aliases?: string[];
 }
 
+// types/components.ts ✅
 interface ComponentProperties {
   id: string;
   name: string;
+  type: 'COMPONENT' | 'COMPONENT_SET' | 'INSTANCE';
   colors: ColorProperty[];
   typography: TypographyProperty[];
   spacing: SpacingProperty[];
   effects: EffectProperty[];
 }
 
+// New: Match result structure (already used in main.ts)
 interface MatchResult {
   token: ParsedToken;
-  component: ComponentProperties;
-  confidence: number;
-  matchedProperties: string[];
+  matchingComponents: Array<{
+    id: string;
+    name: string;
+    page: string;
+    type: string;
+    matches: string[];
+  }>;
+  totalMatches: number;
+  totalComponentsScanned: number;
 }
 ```
 
 ---
 
-## Immediate Next Steps
+## Implementation Guidelines
 
-1. **Enhance token parsing** - Build on existing fetch functionality
-2. **Create component scanner** - Start with simple property extraction
-3. **Implement basic matching** - Exact value matching first
-4. **Build results UI** - Expand current UI with results panel
+### **UI Component Requirements**
+- ✅ **Always use Figma UI components** from `@create-figma-plugin/ui`
+- ✅ **Use Figma CSS variables** for styling (e.g., `var(--figma-color-text)`)
+- ✅ **No custom components** - only use provided Figma components
+- ✅ **Follow Figma design patterns** - use `Stack`, `Container`, `Inline` for layout
+
+### **Figma API Patterns**
+- Use `figma.getNodeById()` to retrieve nodes
+- Use `node.clone()` to copy components
+- Use `figma.currentPage.appendChild()` to add to page
+- Use auto-layout frames for organized layouts
+- Use `figma.notify()` for user feedback
 
 ---
 
-## Questions to Consider
+## Immediate Next Steps
 
-1. **Scope:** Should we match tokens to component instances or just component definitions?
-2. **Multiple files:** Should we scan all pages or just current page?
-3. **Token formats:** Which formats are priority? (W3C, Style Dictionary, custom?)
-4. **Matching granularity:** Match at property level or component level?
-5. **Update strategy:** Should plugin update components when tokens change?
+1. **Add matching results UI** - Display scan results in plugin UI using Figma components
+2. **Implement component collection** - Create function to copy matched components to a new frame
+3. **Add navigation** - Allow users to jump to matched components in Figma
+4. **Test with real data** - Verify with actual token files and component libraries
+
+---
+
+## Key Decisions Made
+
+1. **Component scanning scope:** ✅ Supports all pages, current page, or selection (already implemented)
+2. **Token formats:** ✅ Supports W3C, Token Studio, and plain nested JSON (already implemented)
+3. **Matching granularity:** ✅ Matches at property level (colors, typography, spacing, effects)
+4. **UI framework:** ✅ Use only Figma UI components, no custom styling
+5. **Collection strategy:** ⏳ Create new frame with auto-layout grid of matched components
 
 ---
 
 ## Conclusion
 
-The plan is solid and achievable. The current foundation provides a good starting point. The main recommendations are:
+The foundation is solid with token parsing and component scanning complete. The next phase focuses on:
 
-1. Start with simpler matching algorithms and iterate
-2. Focus on W3C Design Tokens format first
-3. Use existing Figma API patterns (not the non-existent ones)
-4. Build incrementally - each phase should produce working functionality
-5. Consider performance from the start (large libraries)
+1. **User-facing results** - Show what was found in a clear, navigable interface
+2. **Actionable outcomes** - Allow users to collect matched components in one place
+3. **Figma-native experience** - Use only Figma UI components and patterns
 
-**Ready to begin Phase 1 when you are!**
+**Ready to implement Phase 1: Matching Results UI!**
 

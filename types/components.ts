@@ -15,6 +15,7 @@ export interface ColorProperty {
   hex: string;
   rgba: string;
   opacity: number;
+  tokenReference?: string; // Token Studio token reference (e.g., "colors.primary.500")
 }
 
 export interface TypographyProperty {
@@ -25,12 +26,14 @@ export interface TypographyProperty {
   letterSpacing?: number;
   textDecoration?: string;
   textCase?: string;
+  tokenReference?: string; // Token Studio token reference
 }
 
 export interface SpacingProperty {
   type: 'width' | 'height' | 'padding' | 'gap';
   value: number;
   unit: string;
+  tokenReference?: string; // Token Studio token reference
 }
 
 export interface EffectProperty {

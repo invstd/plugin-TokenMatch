@@ -1,11 +1,18 @@
 import { GitHubTokenService } from '../services/github-token-service';
 import { FigmaComponentService } from '../services/figma-component-service';
+import { TokenMatchingService } from '../services/token-matching-service';
 import { ParsedTokens } from '../types/tokens';
 import { showUI, on, emit } from '@create-figma-plugin/utilities';
 
 export default function () {
-  // Show the plugin UI
-  showUI({ width: 400, height: 550 });
+  // Show the plugin UI with resize enabled
+  showUI({ width: 400, height: 550 }, { resizable: true });
+
+  // Load all pages in the background on startup
+  // This ensures pages are available for scanning when needed
+  figma.loadAllPagesAsync().catch((error) => {
+    console.error('Error loading pages on startup:', error);
+  });
 
 interface RepoConfig {
   repoUrl: string;
@@ -17,6 +24,7 @@ interface RepoConfig {
 // Initialize services
 const githubService = new GitHubTokenService();
 const figmaComponentService = new FigmaComponentService();
+const tokenMatchingService = new TokenMatchingService();
 
 // Load saved configuration on startup
 async function loadConfig(): Promise<RepoConfig | null> {
@@ -450,7 +458,15 @@ on('detect-token-files', async (msg: { repoUrl: string; token: string; branch: s
 on('scan-components', async (msg: { scanAll?: boolean }) => {
   try {
     const scanAll = msg.scanAll === true;
-    emit('scan-progress', { message: scanAll ? 'Scanning all pages...' : 'Scanning current page...' });
+    
+    if (scanAll) {
+      emit('scan-progress', { message: 'Loading all pages...' });
+      // Load all pages before scanning
+      await figma.loadAllPagesAsync();
+      emit('scan-progress', { message: 'Scanning all pages...' });
+    } else {
+      emit('scan-progress', { message: 'Scanning current page...' });
+    }
 
     const result = scanAll
       ? figmaComponentService.scanAllComponents()
@@ -484,6 +500,12 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
 
     let progressMessage = 'Scanning for token matches...';
     if (scanAllPages) {
+      progressMessage = 'Loading all pages...';
+      emit('scan-progress', { message: progressMessage });
+      
+      // Load all pages before scanning
+      await figma.loadAllPagesAsync();
+      
       progressMessage = 'Scanning all pages for token matches...';
     } else if (scanSelected) {
       progressMessage = 'Scanning selection for token matches...';
@@ -494,6 +516,7 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
     emit('scan-progress', { message: progressMessage });
 
     // Scan components
+    emit('scan-progress', { message: 'Scanning components...' });
     let scanResult;
     if (scanAllPages) {
       scanResult = figmaComponentService.scanAllComponents();
@@ -511,95 +534,37 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
       scanResult = figmaComponentService.scanCurrentPage();
     }
 
-      // Match token against components
-      const matchingComponents: any[] = [];
-      
-      for (const component of scanResult.components) {
-        const matches: string[] = [];
-        
-        // Check colors
-        for (const color of component.colors) {
-          if (token.type === 'color') {
-            const tokenValue = String(token.value).toLowerCase().trim();
-            const componentHex = color.hex.toLowerCase().trim();
-            const componentRgba = color.rgba.toLowerCase().trim();
-            
-            if (tokenValue === componentHex || tokenValue === componentRgba) {
-              matches.push(`Color ${color.type}: ${color.hex}`);
-            }
-          }
-        }
-        
-        // Check typography
-        for (const typo of component.typography) {
-          if (token.type === 'typography' || token.type === 'fontFamily' || token.type === 'fontWeight') {
-            const tokenValue = String(token.value).toLowerCase().trim();
-            
-            if (token.type === 'fontFamily' && typo.fontFamily.toLowerCase() === tokenValue) {
-              matches.push(`Font family: ${typo.fontFamily}`);
-            } else if (token.type === 'fontWeight' && String(typo.fontWeight) === tokenValue) {
-              matches.push(`Font weight: ${typo.fontWeight}`);
-            } else if (token.type === 'typography') {
-              // For typography objects, check if any property matches
-              if (typeof token.value === 'object') {
-                const tokenObj = token.value as any;
-                if (tokenObj.fontFamily && typo.fontFamily.toLowerCase() === String(tokenObj.fontFamily).toLowerCase()) {
-                  matches.push(`Typography: ${typo.fontFamily}`);
-                }
-              }
-            }
-          }
-        }
-        
-        // Check spacing
-        for (const spacing of component.spacing) {
-          if (token.type === 'dimension') {
-            const tokenValue = String(token.value).replace(/px|rem|em|pt/g, '').trim();
-            const componentValue = String(spacing.value).trim();
-            
-            if (tokenValue === componentValue) {
-              matches.push(`${spacing.type}: ${spacing.value}${spacing.unit}`);
-            }
-          }
-        }
-        
-        // Check effects (for shadow tokens)
-        for (const effect of component.effects) {
-          if (token.type === 'shadow') {
-            const tokenValue = token.value;
-            if (typeof tokenValue === 'object' && effect.radius) {
-              const tokenRadius = (tokenValue as any).blur || (tokenValue as any).radius;
-              if (tokenRadius && Math.abs(Number(tokenRadius) - effect.radius) < 1) {
-                matches.push(`Effect ${effect.type}: ${effect.radius}px`);
-              }
-            }
-          }
-        }
-        
-        if (matches.length > 0) {
-          matchingComponents.push({
-            id: component.id,
-            name: component.name,
-            page: component.pageName,
-            type: component.type,
-            matches: matches
-          });
-        }
-      }
+    emit('scan-progress', { message: `Found ${scanResult.totalComponents} components. Matching tokens...` });
 
-    emit('scan-result', {
-      success: true,
-      result: {
+    // Use matching service to find matches
+    const matchingResult = tokenMatchingService.matchTokenToComponents(token, scanResult);
+    
+    emit('scan-progress', { message: 'Matching complete!' });
+
+      // Format results for UI
+      const formattedResults = {
         token: {
           name: token.name,
           path: token.path,
           type: token.type,
           value: token.value
         },
-        matchingComponents: matchingComponents,
-        totalMatches: matchingComponents.length,
-        totalComponentsScanned: scanResult.totalComponents
-      }
+        matchingComponents: matchingResult.matchingComponents.map(match => ({
+          id: match.component.id,
+          name: match.component.name,
+          page: match.component.pageName,
+          type: match.component.type,
+          matches: match.matches.map(m => `${m.property}: ${m.matchedValue}`),
+          matchDetails: match.matches,
+          confidence: match.confidence
+        })),
+        totalMatches: matchingResult.totalMatches,
+        totalComponentsScanned: matchingResult.totalComponentsScanned
+      };
+
+    emit('scan-result', {
+      success: true,
+      result: formattedResults
     });
   } catch (error) {
     emit('scan-result', {
@@ -630,17 +595,28 @@ on('navigate-to-component', async (msg: { componentId: string }) => {
     const { componentId } = msg;
     const node = figma.getNodeById(componentId);
     
-    if (node && 'type' in node && 
-        (node.type === 'COMPONENT' || 
-         node.type === 'COMPONENT_SET' || 
-         node.type === 'INSTANCE')) {
-      figma.currentPage.selection = [node];
-      figma.viewport.scrollAndZoomIntoView([node]);
-      emit('navigate-result', { success: true });
+    if (node && 'type' in node) {
+      // Handle nodes that might be on different pages
+      const nodeParent = findPageForNode(node);
+      if (nodeParent && nodeParent.type === 'PAGE' && nodeParent !== figma.currentPage) {
+        await figma.setCurrentPageAsync(nodeParent);
+      }
+      
+      // Select and zoom to the node (works with any SceneNode type)
+      if (node.type !== 'DOCUMENT' && node.type !== 'PAGE') {
+        figma.currentPage.selection = [node as SceneNode];
+        figma.viewport.scrollAndZoomIntoView([node as SceneNode]);
+        emit('navigate-result', { success: true });
+      } else {
+        emit('navigate-result', {
+          success: false,
+          error: 'Cannot select document or page nodes'
+        });
+      }
     } else {
       emit('navigate-result', {
         success: false,
-        error: 'Component not found'
+        error: 'Node not found'
       });
     }
   } catch (error) {
@@ -651,7 +627,226 @@ on('navigate-to-component', async (msg: { componentId: string }) => {
   }
 });
 
+// Helper to find the page containing a node
+function findPageForNode(node: BaseNode): PageNode | null {
+  let current: BaseNode | null = node;
+  while (current && current.type !== 'PAGE') {
+    current = current.parent;
+  }
+  return current as PageNode | null;
+}
+
 on('cancel', () => {
   figma.closePlugin();
 });
+
+on('resize-window', (msg: { width: number; height: number }) => {
+  figma.ui.resize(msg.width, msg.height);
+});
+
+// ============================================================================
+// DIAGNOSTIC: Inspect Plugin Data (Phase 1 Investigation)
+// This helps discover how Tokens Studio stores token references
+// ============================================================================
+
+interface PluginDataInspection {
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  pluginData: Record<string, string>;
+  sharedPluginData: Record<string, Record<string, string>>;
+  boundVariables?: Record<string, any>;
+}
+
+/**
+ * Inspect all plugin data on a node to discover Tokens Studio data format
+ */
+function inspectPluginData(node: SceneNode): PluginDataInspection {
+  const results: PluginDataInspection = {
+    nodeId: node.id,
+    nodeName: node.name,
+    nodeType: node.type,
+    pluginData: {},
+    sharedPluginData: {}
+  };
+
+  // Get all plugin data keys (our plugin's namespace)
+  try {
+    const pluginDataKeys = node.getPluginDataKeys();
+    for (const key of pluginDataKeys) {
+      results.pluginData[key] = node.getPluginData(key);
+    }
+  } catch (e) {
+    console.error('Error getting plugin data keys:', e);
+  }
+
+  // Get shared plugin data from known namespaces
+  // These are namespaces that Tokens Studio and other plugins might use
+  const namespaces = [
+    'tokens',
+    'tokens-studio', 
+    'tokensStudio',
+    'figma-tokens',
+    'design-tokens',
+    'token-studio',
+    'com.tokens.studio',
+    'tokens.studio',
+    'io.tokens.studio',
+    'figmatokens',
+    'style-dictionary',
+    // Common other plugin namespaces
+    'ds',
+    'design-system',
+    'theme',
+    'variables'
+  ];
+
+  for (const namespace of namespaces) {
+    try {
+      const keys = node.getSharedPluginDataKeys(namespace);
+      if (keys.length > 0) {
+        results.sharedPluginData[namespace] = {};
+        for (const key of keys) {
+          const value = node.getSharedPluginData(namespace, key);
+          results.sharedPluginData[namespace][key] = value;
+        }
+      }
+    } catch (e) {
+      // Namespace doesn't exist or error accessing it - that's fine
+    }
+  }
+
+  // Also check for Figma Variables (modern approach)
+  try {
+    if ('boundVariables' in node && node.boundVariables) {
+      results.boundVariables = {};
+      const boundVars = node.boundVariables as Record<string, any>;
+      for (const [prop, binding] of Object.entries(boundVars)) {
+        if (binding) {
+          // Try to get variable details
+          if (Array.isArray(binding)) {
+            results.boundVariables[prop] = binding.map((b: any) => {
+              try {
+                const variable = figma.variables.getVariableById(b.id);
+                return {
+                  id: b.id,
+                  name: variable?.name,
+                  resolvedType: variable?.resolvedType,
+                  valuesByMode: variable?.valuesByMode
+                };
+              } catch {
+                return { id: b.id, error: 'Could not resolve variable' };
+              }
+            });
+          } else if (binding.id) {
+            try {
+              const variable = figma.variables.getVariableById(binding.id);
+              results.boundVariables[prop] = {
+                id: binding.id,
+                name: variable?.name,
+                resolvedType: variable?.resolvedType,
+                valuesByMode: variable?.valuesByMode
+              };
+            } catch {
+              results.boundVariables[prop] = { id: binding.id, error: 'Could not resolve variable' };
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error getting bound variables:', e);
+  }
+
+  return results;
+}
+
+/**
+ * Recursively inspect a node and its children
+ */
+function inspectNodeTree(node: SceneNode, maxDepth: number = 3, currentDepth: number = 0): PluginDataInspection[] {
+  const results: PluginDataInspection[] = [];
+  
+  // Inspect this node
+  const inspection = inspectPluginData(node);
+  
+  // Only include if there's actual data
+  const hasData = 
+    Object.keys(inspection.pluginData).length > 0 ||
+    Object.keys(inspection.sharedPluginData).length > 0 ||
+    (inspection.boundVariables && Object.keys(inspection.boundVariables).length > 0);
+  
+  // Always include the node itself for context, mark if it has data
+  results.push({
+    ...inspection,
+    // Add a marker if this node has no plugin data
+    pluginData: hasData ? inspection.pluginData : { '_noData': 'true' }
+  });
+  
+  // Recurse into children if not at max depth
+  if (currentDepth < maxDepth && 'children' in node) {
+    for (const child of node.children) {
+      results.push(...inspectNodeTree(child, maxDepth, currentDepth + 1));
+    }
+  }
+  
+  return results;
+}
+
+on('inspect-selection', async () => {
+  try {
+    const selection = figma.currentPage.selection;
+    
+    if (selection.length === 0) {
+      emit('inspect-result', {
+        success: false,
+        error: 'No selection. Please select a node to inspect.'
+      });
+      return;
+    }
+    
+    emit('inspect-progress', { message: 'Inspecting plugin data...' });
+    
+    const allResults: PluginDataInspection[] = [];
+    
+    for (const node of selection) {
+      // Inspect the selected node and its children (up to 3 levels deep)
+      const nodeResults = inspectNodeTree(node, 3);
+      allResults.push(...nodeResults);
+    }
+    
+    // Filter to only nodes with actual data for the summary
+    const nodesWithData = allResults.filter(r => 
+      !r.pluginData['_noData'] &&
+      (Object.keys(r.pluginData).length > 0 ||
+       Object.keys(r.sharedPluginData).length > 0 ||
+       (r.boundVariables && Object.keys(r.boundVariables).length > 0))
+    );
+    
+    // Clean up the _noData marker
+    allResults.forEach(r => {
+      if (r.pluginData['_noData']) {
+        r.pluginData = {};
+      }
+    });
+    
+    emit('inspect-result', {
+      success: true,
+      results: allResults,
+      summary: {
+        totalNodesInspected: allResults.length,
+        nodesWithPluginData: nodesWithData.length,
+        namespacesFound: Array.from(new Set(nodesWithData.flatMap(r => Object.keys(r.sharedPluginData)))),
+        pluginDataKeysFound: Array.from(new Set(nodesWithData.flatMap(r => Object.keys(r.pluginData)))),
+        hasVariableBindings: nodesWithData.some(r => r.boundVariables && Object.keys(r.boundVariables).length > 0)
+      }
+    });
+  } catch (error) {
+    emit('inspect-result', {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to inspect selection'
+    });
+  }
+});
+
 }
