@@ -180,6 +180,9 @@
   }
 }
 @layer utilities {
+  .invisible {
+    visibility: hidden;
+  }
   .visible {
     visibility: visible;
   }
@@ -386,15 +389,18 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #3c3c3c;
+  background: var(--figma-color-border);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #505050;
+  background: var(--figma-color-border-strong);
 }
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3c3c3c transparent;
+  scrollbar-color: var(--figma-color-border) transparent;
+}
+button[disabled] {
+  color: var(--figma-color-text-disabled) !important;
 }
 @property --tw-rotate-x {
   syntax: "*";

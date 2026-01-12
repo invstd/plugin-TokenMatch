@@ -54,6 +54,8 @@ export interface ComponentProperties {
   name: string;
   type: 'COMPONENT' | 'COMPONENT_SET' | 'INSTANCE';
   pageName: string;
+  mainComponentName?: string; // For variants: the parent ComponentSet name (e.g., "KdsButton")
+  mainComponentId?: string; // ID of the main component or component set
   colors: ColorProperty[];
   typography: TypographyProperty[];
   spacing: SpacingProperty[];

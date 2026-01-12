@@ -232,6 +232,16 @@ function Plugin() {
         setTimeout(() => setToast(null), 3000);
       }
     });
+
+    on('create-collection-result', (msg: any) => {
+      if (msg.success) {
+        setToast(`Created collection with ${msg.count} component${msg.count !== 1 ? 's' : ''}`);
+        setTimeout(() => setToast(null), 3000);
+      } else {
+        setToast(msg.error || 'Could not create collection');
+        setTimeout(() => setToast(null), 3000);
+      }
+    });
   }, []);
 
   const updateConfigStatus = (config: any) => {
@@ -652,6 +662,7 @@ function Plugin() {
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '12px',
+                marginTop: '16px',
                 marginBottom: '16px'
               }}>
                 {/* Header row */}
@@ -661,258 +672,329 @@ function Plugin() {
                   justifyContent: 'space-between', 
                   alignItems: 'center'
                 }}>
-                  <span style={{ color: '#ffffff', fontSize: '12px', fontWeight: 700 }}>
+                  <span style={{ color: 'var(--figma-color-text)', fontSize: '12px', fontWeight: 700 }}>
                     Results
                   </span>
-                  <span style={{ color: '#c2c2c2', fontSize: '11px', fontWeight: 500 }}>
-                    {matchingResults.totalMatches} match{matchingResults.totalMatches !== 1 ? 'es' : ''} in {matchingResults.totalComponentsScanned} component{matchingResults.totalComponentsScanned !== 1 ? 's' : ''}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ color: 'var(--figma-color-text-secondary)', fontSize: '11px', fontWeight: 500 }}>
+                      {matchingResults.totalMatches} match{matchingResults.totalMatches !== 1 ? 'es' : ''} in {matchingResults.totalComponentsScanned} component{matchingResults.totalComponentsScanned !== 1 ? 's' : ''}
+                    </span>
+                    {matchingResults.matchingComponents.length > 0 && (
+                      <Button 
+                        onClick={() => {
+                          // Group components by mainComponentName (from backend)
+                          const groupedComponents: { [key: string]: any[] } = {};
+                          for (const comp of matchingResults.matchingComponents) {
+                            const mainName = comp.mainComponentName || comp.name;
+                            if (!groupedComponents[mainName]) {
+                              groupedComponents[mainName] = [];
+                            }
+                            groupedComponents[mainName].push(comp);
+                          }
+                          
+                          emit('create-component-collection', {
+                            token: matchingResults.token,
+                            groupedComponents,
+                            matchingComponents: matchingResults.matchingComponents
+                          });
+                        }}
+                        secondary
+                      >
+                        Paste to canvas
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
-                {/* Scrollable component cards container */}
+                {/* Component cards container */}
                 {matchingResults.matchingComponents.length > 0 ? (
                   <div 
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '12px',
-                      maxHeight: '300px',
-                      overflowY: 'auto',
-                      overflowX: 'hidden'
+                      gap: '12px'
                     }}
                   >
-                    {matchingResults.matchingComponents.map((comp: any, index: number) => {
-                      // Get first match details for display
-                      const match = comp.matchDetails?.[0];
-                      const isSpacing = match?.propertyType === 'spacing';
-                      const isColor = match?.propertyType === 'color';
+                    {(() => {
+                      // Group components by mainComponentName (from backend) for variants
+                      const groupedComponents: Map<string, any[]> = new Map();
                       
-                      // Extract color info
-                      const colorMatch = match?.matchedValue?.match?.(/(#[0-9A-Fa-f]{6})/);
-                      const hexColor = colorMatch ? colorMatch[1] : null;
-                      
-                      // Extract token path from matchedValue (after ←)
-                      const tokenPathMatch = match?.matchedValue?.match?.(/←\s*(.+)$/);
-                      let tokenPath = tokenPathMatch ? tokenPathMatch[1] : match?.tokenValue || '';
-                      tokenPath = tokenPath.replace(/^["']|["']$/g, '');
-                      // Remove context prefix like "[horizontal] " from display
-                      tokenPath = tokenPath.replace(/^\[\w+\]\s*/, '');
-                      
-                      // Extract pixel value for spacing
-                      const pxMatch = match?.matchedValue?.match?.(/^(\d+(?:\.\d+)?)(px|rem|em)?/);
-                      const pxValue = pxMatch ? `${pxMatch[1]}${pxMatch[2] || 'px'}` : null;
-                      
-                      // Extract property type and layer info from match.property
-                      // Format: "layerName → padding (token ref)" or "border-radius (token ref)"
-                      const propertyParts = match?.property?.split(' → ') || [];
-                      const layerName = propertyParts.length > 1 ? propertyParts[0] : null;
-                      const rawPropertyType = propertyParts.length > 1 ? propertyParts[1] : propertyParts[0] || '';
-                      // Clean up property type - remove "(token ref)" etc
-                      const cleanPropertyType = rawPropertyType.replace(/\s*\([^)]*\)\s*/g, '').trim();
-                      
-                      // Parse spacing property details
-                      const getSpacingDetails = (propType: string, tokenRef: string) => {
-                        const prop = propType.toLowerCase();
-                        let ref = tokenRef.toLowerCase();
+                      for (const comp of matchingResults.matchingComponents) {
+                        // Use mainComponentName from backend, fallback to name
+                        const mainName = comp.mainComponentName || comp.name;
                         
-                        // Extract context prefix if present: "[horizontal] ids.spacing.1x"
-                        let contextFromPrefix = '';
-                        const contextMatch = tokenRef.match(/^\[(\w+)\]\s*/);
-                        if (contextMatch) {
-                          contextFromPrefix = contextMatch[1].toLowerCase();
-                          ref = tokenRef.slice(contextMatch[0].length).toLowerCase();
+                        if (!groupedComponents.has(mainName)) {
+                          groupedComponents.set(mainName, []);
                         }
-                        
-                        // Determine the property category
-                        let category = '';
-                        if (prop.includes('padding') || prop.includes('gap') && ref.includes('padding')) {
-                          category = 'Padding';
-                        } else if (prop.includes('gap') || prop.includes('spacing') && !ref.includes('padding')) {
-                          category = 'Gap';
-                        } else if (prop.includes('border-radius') || prop.includes('radius')) {
-                          category = 'Radius';
-                        } else if (prop.includes('border-width') || prop.includes('stroke')) {
-                          category = 'Border';
-                        } else if (prop.includes('width')) {
-                          category = 'Width';
-                        } else if (prop.includes('height')) {
-                          category = 'Height';
-                        } else {
-                          category = propType.charAt(0).toUpperCase() + propType.slice(1);
-                        }
-                        
-                        // Determine direction/context - prefer prefix, fall back to token ref content
-                        let direction = '';
-                        if (contextFromPrefix === 'horizontal') {
-                          direction = 'Horizontal';
-                        } else if (contextFromPrefix === 'vertical') {
-                          direction = 'Vertical';
-                        } else if (contextFromPrefix === 'all') {
-                          direction = 'All';
-                        } else if (ref.includes('horizontal') || ref.includes('horizontalpadding')) {
-                          direction = 'Horizontal';
-                        } else if (ref.includes('vertical') || ref.includes('verticalpadding')) {
-                          direction = 'Vertical';
-                        } else if (ref.includes('top')) {
-                          direction = 'Top';
-                        } else if (ref.includes('right')) {
-                          direction = 'Right';
-                        } else if (ref.includes('bottom')) {
-                          direction = 'Bottom';
-                        } else if (ref.includes('left')) {
-                          direction = 'Left';
-                        }
-                        
-                        return { category, direction };
-                      };
+                        groupedComponents.get(mainName)!.push(comp);
+                      }
                       
-                      const spacingDetails = isSpacing ? getSpacingDetails(cleanPropertyType, tokenPath) : null;
-                      const formattedType = cleanPropertyType.charAt(0).toUpperCase() + cleanPropertyType.slice(1);
+                      return Array.from(groupedComponents.entries()).map(([mainName, variants], groupIndex) => {
+                        // Use the first variant for display details
+                        const comp = variants[0];
+                        const variantCount = variants.length;
+                        const hasMultipleVariants = variantCount > 1;
+                        
+                        // Get first match details for display
+                        const match = comp.matchDetails?.[0];
+                        const isSpacing = match?.propertyType === 'spacing';
+                        const isColor = match?.propertyType === 'color';
+                        
+                        // Extract color info
+                        const colorMatch = match?.matchedValue?.match?.(/(#[0-9A-Fa-f]{6})/);
+                        const hexColor = colorMatch ? colorMatch[1] : null;
+                        
+                        // Extract token path from matchedValue (after ←)
+                        const tokenPathMatch = match?.matchedValue?.match?.(/←\s*(.+)$/);
+                        let tokenPath = tokenPathMatch ? tokenPathMatch[1] : match?.tokenValue || '';
+                        tokenPath = tokenPath.replace(/^["']|["']$/g, '');
+                        // Remove context prefix like "[horizontal] " from display
+                        tokenPath = tokenPath.replace(/^\[\w+\]\s*/, '');
+                        
+                        // Extract pixel value for spacing
+                        const pxMatch = match?.matchedValue?.match?.(/^(\d+(?:\.\d+)?)(px|rem|em)?/);
+                        const pxValue = pxMatch ? `${pxMatch[1]}${pxMatch[2] || 'px'}` : null;
+                        
+                        // Extract property type and layer info from match.property
+                        // Format: "layerName → padding (token ref)" or "border-radius (token ref)"
+                        const propertyParts = match?.property?.split(' → ') || [];
+                        const layerName = propertyParts.length > 1 ? propertyParts[0] : null;
+                        const rawPropertyType = propertyParts.length > 1 ? propertyParts[1] : propertyParts[0] || '';
+                        // Clean up property type - remove "(token ref)" etc
+                        const cleanPropertyType = rawPropertyType.replace(/\s*\([^)]*\)\s*/g, '').trim();
+                        
+                        // Format color type for display (e.g., "fill color" -> "Fill color")
+                        const getColorTypeLabel = (propType: string) => {
+                          const type = propType.toLowerCase();
+                          if (type.includes('fill')) return 'Fill color';
+                          if (type.includes('stroke')) return 'Stroke color';
+                          if (type.includes('background')) return 'Background';
+                          return propType.charAt(0).toUpperCase() + propType.slice(1);
+                        };
+                        
+                        // Parse spacing property details
+                        const getSpacingDetails = (propType: string, tokenRef: string) => {
+                          const prop = propType.toLowerCase();
+                          let ref = tokenRef.toLowerCase();
+                          
+                          // Extract context prefix if present: "[horizontal] ids.spacing.1x"
+                          let contextFromPrefix = '';
+                          const contextMatch = tokenRef.match(/^\[(\w+)\]\s*/);
+                          if (contextMatch) {
+                            contextFromPrefix = contextMatch[1].toLowerCase();
+                            ref = tokenRef.slice(contextMatch[0].length).toLowerCase();
+                          }
+                          
+                          // Determine the property category
+                          let category = '';
+                          if (prop.includes('padding') || prop.includes('gap') && ref.includes('padding')) {
+                            category = 'Padding';
+                          } else if (prop.includes('gap') || prop.includes('spacing') && !ref.includes('padding')) {
+                            category = 'Gap';
+                          } else if (prop.includes('border-radius') || prop.includes('radius')) {
+                            category = 'Radius';
+                          } else if (prop.includes('border-width') || prop.includes('stroke')) {
+                            category = 'Border';
+                          } else if (prop.includes('width')) {
+                            category = 'Width';
+                          } else if (prop.includes('height')) {
+                            category = 'Height';
+                          } else {
+                            category = propType.charAt(0).toUpperCase() + propType.slice(1);
+                          }
+                          
+                          // Determine direction/context - prefer prefix, fall back to token ref content
+                          let direction = '';
+                          if (contextFromPrefix === 'horizontal') {
+                            direction = 'Horizontal';
+                          } else if (contextFromPrefix === 'vertical') {
+                            direction = 'Vertical';
+                          } else if (contextFromPrefix === 'all') {
+                            direction = 'All';
+                          } else if (ref.includes('horizontal') || ref.includes('horizontalpadding')) {
+                            direction = 'Horizontal';
+                          } else if (ref.includes('vertical') || ref.includes('verticalpadding')) {
+                            direction = 'Vertical';
+                          } else if (ref.includes('top')) {
+                            direction = 'Top';
+                          } else if (ref.includes('right')) {
+                            direction = 'Right';
+                          } else if (ref.includes('bottom')) {
+                            direction = 'Bottom';
+                          } else if (ref.includes('left')) {
+                            direction = 'Left';
+                          }
+                          
+                          return { category, direction };
+                        };
+                        
+                        const spacingDetails = isSpacing ? getSpacingDetails(cleanPropertyType, tokenPath) : null;
+                        const colorTypeLabel = isColor ? getColorTypeLabel(cleanPropertyType) : '';
 
-                      return (
-                        <div 
-                          key={comp.id || index}
-                          style={{ 
-                            width: '100%',
-                            background: '#313131',
-                            borderRadius: '4px',
-                            border: '1px solid #3c3c3c',
-                            overflow: 'hidden',
-                            flexShrink: 0
-                          }}
-                        >
-                          {/* Row 1: Component name + button */}
-                          <div style={{ 
-                            height: '32px',
-                            padding: '0 8px',
-                            paddingRight: '4px',
-                            borderBottom: '1px solid #3c3c3c',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center'
-                          }}>
-                            <span style={{ color: '#ffffff', fontSize: '11px', fontWeight: 700 }}>
-                              {comp.name}
-                            </span>
-                            <Button 
-                              onClick={() => handleNavigateToComponent(comp.id)}
-                              secondary
-                            >
-                              View
-                            </Button>
-                          </div>
+                        return (
+                          <div 
+                            key={mainName || groupIndex}
+                            style={{ 
+                              width: '100%',
+                              background: 'var(--figma-color-bg-secondary)',
+                              borderRadius: '4px',
+                              border: '1px solid var(--figma-color-border)',
+                              overflow: 'hidden',
+                              flexShrink: 0
+                            }}
+                          >
+                            {/* Row 1: Component name + button */}
+                            <div style={{ 
+                              height: '32px',
+                              padding: '0 8px',
+                              paddingRight: '4px',
+                              borderBottom: '1px solid var(--figma-color-border)',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center'
+                            }}>
+                              <span style={{ color: 'var(--figma-color-text)', fontSize: '11px', fontWeight: 700 }}>
+                                {mainName}
+                              </span>
+                              <Button 
+                                onClick={() => handleNavigateToComponent(comp.id)}
+                                secondary
+                              >
+                                View
+                              </Button>
+                            </div>
 
-                          {/* Row 2: Token path */}
-                          <div style={{ 
-                            height: '24px',
-                            padding: '0 8px',
-                            display: 'flex',
-                            alignItems: 'center'
-                          }}>
-                            <span style={{ color: '#c0c0c0', fontSize: '11px', fontWeight: 400 }}>
-                              {tokenPath}
-                            </span>
-                          </div>
+                            {/* Row 2: Token path */}
+                            <div style={{ 
+                              height: '24px',
+                              padding: '0 8px',
+                              display: 'flex',
+                              alignItems: 'center'
+                            }}>
+                              <span style={{ color: 'var(--figma-color-text-secondary)', fontSize: '11px', fontWeight: 400 }}>
+                                {tokenPath}
+                              </span>
+                            </div>
 
-                          {/* Row 3: Property details with badges */}
-                          <div style={{ 
-                            minHeight: '32px',
-                            padding: '6px 8px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            flexWrap: 'wrap'
-                          }}>
-                            {/* Color: show swatch + hex */}
-                            {isColor && hexColor && (
-                              <div style={{ display: 'contents' }}>
-                                <div style={{
-                                  width: '16px',
-                                  height: '16px',
-                                  background: hexColor,
-                                  borderRadius: '4px',
-                                  border: '1px solid #3c3c3c',
-                                  flexShrink: 0
-                                }} />
-                                <span style={{ 
-                                  padding: '2px 6px',
-                                  background: '#3c3c3c',
-                                  borderRadius: '3px',
-                                  color: '#ffffff',
-                                  fontSize: '10px',
-                                  fontWeight: 500,
-                                  fontFamily: 'monospace'
-                                }}>
-                                  {hexColor}
-                                </span>
-                                <span style={{ color: '#808080', fontSize: '10px' }}>
-                                  {formattedType}{layerName ? ` on ${layerName}` : ''}
-                                </span>
-                              </div>
-                            )}
-                            
-                            {/* Spacing: show value + type + direction badges */}
-                            {isSpacing && spacingDetails && (
-                              <div style={{ display: 'contents' }}>
-                                {pxValue && (
+                            {/* Row 3: Property details with badges */}
+                            <div style={{ 
+                              minHeight: '32px',
+                              padding: '6px 8px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              flexWrap: 'wrap'
+                            }}>
+                              {/* Color: show swatch + hex value + type tag + variant count */}
+                              {isColor && hexColor && (
+                                <div style={{ display: 'contents' }}>
+                                  <div style={{
+                                    width: '16px',
+                                    height: '16px',
+                                    background: hexColor,
+                                    borderRadius: '4px',
+                                    border: '1px solid var(--figma-color-border)',
+                                    flexShrink: 0
+                                  }} />
                                   <span style={{ 
-                                    padding: '2px 6px',
-                                    background: '#3A4C6F',
-                                    borderRadius: '3px',
-                                    color: '#D2DCFF',
+                                    color: 'var(--figma-color-text-tertiary)', 
                                     fontSize: '10px',
-                                    fontWeight: 500,
                                     fontFamily: 'monospace'
                                   }}>
-                                    {pxValue}
+                                    {hexColor}
                                   </span>
-                                )}
-                                <span style={{ 
-                                  padding: '2px 6px',
-                                  background: '#3c3c3c',
-                                  borderRadius: '3px',
-                                  color: '#ffffff',
-                                  fontSize: '10px',
-                                  fontWeight: 400
-                                }}>
-                                  {spacingDetails.direction && spacingDetails.category === 'Padding' 
-                                    ? `${spacingDetails.direction} ${spacingDetails.category}`
-                                    : spacingDetails.category}
-                                </span>
-                                {spacingDetails.direction && spacingDetails.category !== 'Padding' && (
                                   <span style={{ 
                                     padding: '2px 6px',
-                                    background: '#2a2a2a',
+                                    background: 'var(--figma-color-bg-tertiary)',
                                     borderRadius: '3px',
-                                    color: '#a0a0a0',
+                                    color: 'var(--figma-color-text)',
+                                    fontSize: '10px',
+                                    fontWeight: 500
+                                  }}>
+                                    {colorTypeLabel}
+                                  </span>
+                                  {hasMultipleVariants && (
+                                    <span style={{ color: 'var(--figma-color-text-tertiary)', fontSize: '10px' }}>
+                                      used in {variantCount} variants
+                                    </span>
+                                  )}
+                                  {!hasMultipleVariants && layerName && (
+                                    <span style={{ color: 'var(--figma-color-text-tertiary)', fontSize: '10px' }}>
+                                      on {layerName}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                              
+                              {/* Spacing: show value + type + direction badges + variant count */}
+                              {isSpacing && spacingDetails && (
+                                <div style={{ display: 'contents' }}>
+                                  {pxValue && (
+                                    <span style={{ 
+                                      padding: '2px 6px',
+                                      background: 'var(--figma-color-bg-brand-tertiary)',
+                                      borderRadius: '3px',
+                                      color: 'var(--figma-color-text-brand)',
+                                      fontSize: '10px',
+                                      fontWeight: 500,
+                                      fontFamily: 'monospace'
+                                    }}>
+                                      {pxValue}
+                                    </span>
+                                  )}
+                                  <span style={{ 
+                                    padding: '2px 6px',
+                                    background: 'var(--figma-color-bg-tertiary)',
+                                    borderRadius: '3px',
+                                    color: 'var(--figma-color-text)',
                                     fontSize: '10px',
                                     fontWeight: 400
                                   }}>
-                                    {spacingDetails.direction}
+                                    {spacingDetails.direction && spacingDetails.category === 'Padding' 
+                                      ? `${spacingDetails.direction} ${spacingDetails.category}`
+                                      : spacingDetails.category}
                                   </span>
-                                )}
-                                {layerName && (
-                                  <span style={{ color: '#606060', fontSize: '10px' }}>
-                                    on {layerName}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                            
-                            {/* Effects/other: show generic info */}
-                            {!isColor && !isSpacing && (
-                              <span style={{ color: '#c0c0c0', fontSize: '11px', fontWeight: 400 }}>
-                                {match?.matchedValue || ''} – {formattedType}{layerName ? ` on ${layerName}` : ''}
-                              </span>
-                            )}
+                                  {spacingDetails.direction && spacingDetails.category !== 'Padding' && (
+                                    <span style={{ 
+                                      padding: '2px 6px',
+                                      background: 'var(--figma-color-bg-tertiary)',
+                                      borderRadius: '3px',
+                                      color: 'var(--figma-color-text-tertiary)',
+                                      fontSize: '10px',
+                                      fontWeight: 400
+                                    }}>
+                                      {spacingDetails.direction}
+                                    </span>
+                                  )}
+                                  {hasMultipleVariants && (
+                                    <span style={{ color: 'var(--figma-color-text-tertiary)', fontSize: '10px' }}>
+                                      used in {variantCount} variants
+                                    </span>
+                                  )}
+                                  {!hasMultipleVariants && layerName && (
+                                    <span style={{ color: 'var(--figma-color-text-tertiary)', fontSize: '10px' }}>
+                                      on {layerName}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                              
+                              {/* Effects/other: show generic info */}
+                              {!isColor && !isSpacing && (
+                                <span style={{ color: 'var(--figma-color-text-secondary)', fontSize: '11px', fontWeight: 400 }}>
+                                  {match?.matchedValue || ''} – {cleanPropertyType.charAt(0).toUpperCase() + cleanPropertyType.slice(1)}
+                                  {hasMultipleVariants ? ` used in ${variantCount} variants` : (layerName ? ` on ${layerName}` : '')}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                   </div>
                 ) : (
                   <div style={{ padding: '12px', textAlign: 'center' }}>
-                    <span style={{ fontSize: '11px', color: '#c0c0c0' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)' }}>
                       No matching components found
                     </span>
                   </div>

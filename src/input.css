@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Minimal scrollbar styling */
+/* Minimal scrollbar styling - uses Figma CSS variables for light/dark mode */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -11,16 +11,24 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3c3c3c;
+  background: var(--figma-color-border);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #505050;
+  background: var(--figma-color-border-strong);
 }
 
-/* Firefox */
+/* Firefox - fallback to theme-aware colors */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3c3c3c transparent;
+  scrollbar-color: var(--figma-color-border) transparent;
+}
+
+/* Fix for disabled button text visibility in light mode
+   The @create-figma-plugin/ui library uses var(--figma-color-text-ondisabled)
+   which may not have sufficient contrast in light mode. Override with explicit
+   disabled text color to ensure readability in both themes. */
+button[disabled] {
+  color: var(--figma-color-text-disabled) !important;
 }

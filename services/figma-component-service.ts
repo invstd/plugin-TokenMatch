@@ -592,6 +592,43 @@ export class FigmaComponentService {
       effects: []
     };
 
+    // Determine main component name for variants
+    // For COMPONENT inside COMPONENT_SET: parent's name
+    // For COMPONENT_SET: its own name
+    // For INSTANCE: get from mainComponent's parent
+    if (node.type === 'COMPONENT_SET') {
+      properties.mainComponentName = node.name;
+      properties.mainComponentId = node.id;
+    } else if (node.type === 'COMPONENT') {
+      const component = node as ComponentNode;
+      if (component.parent?.type === 'COMPONENT_SET') {
+        properties.mainComponentName = component.parent.name;
+        properties.mainComponentId = component.parent.id;
+      } else {
+        // Standalone component (not a variant)
+        properties.mainComponentName = node.name;
+        properties.mainComponentId = node.id;
+      }
+    } else if (node.type === 'INSTANCE') {
+      const instance = node as InstanceNode;
+      // Try to get mainComponent synchronously first
+      try {
+        const mainComp = instance.mainComponent;
+        if (mainComp) {
+          if (mainComp.parent?.type === 'COMPONENT_SET') {
+            properties.mainComponentName = mainComp.parent.name;
+            properties.mainComponentId = mainComp.parent.id;
+          } else {
+            properties.mainComponentName = mainComp.name;
+            properties.mainComponentId = mainComp.id;
+          }
+        }
+      } catch (e) {
+        // mainComponent might not be available synchronously
+        properties.mainComponentName = node.name.split(',')[0].trim();
+      }
+    }
+
     // Extract colors (fills and strokes) - includes token references
     // extractColors already handles the node itself, and we'll get children separately
     properties.colors = this.extractColors(node);

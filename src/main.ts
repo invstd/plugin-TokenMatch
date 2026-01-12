@@ -580,6 +580,8 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
           name: match.component.name,
           page: match.component.pageName,
           type: match.component.type,
+          mainComponentName: match.component.mainComponentName,
+          mainComponentId: match.component.mainComponentId,
           matches: match.matches.map(m => `${m.property}: ${m.matchedValue}`),
           matchDetails: match.matches,
           confidence: match.confidence
@@ -662,6 +664,284 @@ function findPageForNode(node: BaseNode): PageNode | null {
   }
   return current as PageNode | null;
 }
+
+// ============================================================================
+// Phase 2: Create Component Collection (Paste to Canvas)
+// ============================================================================
+
+interface MatchingComponent {
+  id: string;
+  name: string;
+  page: string;
+  type: string;
+  mainComponentName?: string;
+  mainComponentId?: string;
+  matches: string[];
+  matchDetails: Array<{
+    property: string;
+    propertyType: string;
+    matchedValue: string;
+    tokenValue: string;
+    confidence: number;
+  }>;
+}
+
+interface ComponentCollectionRequest {
+  token: {
+    name: string;
+    path: string[];
+    type: string;
+    value?: any;
+  };
+  groupedComponents: { [mainName: string]: MatchingComponent[] };
+  matchingComponents: MatchingComponent[];
+}
+
+/**
+ * Get a default variant component from a ComponentSet or Component
+ * Returns a ComponentNode that can be used to create an instance
+ */
+async function getDefaultVariantComponent(nodeId: string): Promise<ComponentNode | null> {
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) return null;
+  
+  // If it's a COMPONENT_SET, get the first/default variant
+  if (node.type === 'COMPONENT_SET') {
+    const componentSet = node as ComponentSetNode;
+    // Try to get default variant or first child
+    const defaultVariant = componentSet.defaultVariant || componentSet.children[0];
+    if (defaultVariant?.type === 'COMPONENT') {
+      return defaultVariant as ComponentNode;
+    }
+  }
+  
+  // If it's already a COMPONENT, return it
+  if (node.type === 'COMPONENT') {
+    return node as ComponentNode;
+  }
+  
+  // If it's an INSTANCE, get its main component
+  if (node.type === 'INSTANCE') {
+    const instance = node as InstanceNode;
+    return await instance.getMainComponentAsync();
+  }
+  
+  return null;
+}
+
+on('create-component-collection', async (msg: ComponentCollectionRequest) => {
+  try {
+    const { token, groupedComponents, matchingComponents } = msg;
+    
+    const groupEntries = Object.entries(groupedComponents || {});
+    if (groupEntries.length === 0 && (!matchingComponents || matchingComponents.length === 0)) {
+      emit('create-collection-result', {
+        success: false,
+        error: 'No components to collect'
+      });
+      return;
+    }
+
+    // Get the token path for naming
+    const tokenPath = Array.isArray(token.path) ? token.path.join('.') : token.name;
+    
+    // Create the main container frame
+    const containerFrame = figma.createFrame();
+    containerFrame.name = `Token Matches: ${tokenPath}`;
+    containerFrame.layoutMode = 'VERTICAL';
+    containerFrame.primaryAxisSizingMode = 'AUTO';
+    containerFrame.counterAxisSizingMode = 'AUTO';
+    containerFrame.paddingTop = 32;
+    containerFrame.paddingBottom = 32;
+    containerFrame.paddingLeft = 32;
+    containerFrame.paddingRight = 32;
+    containerFrame.itemSpacing = 24;
+    containerFrame.fills = [{ type: 'SOLID', color: { r: 0.95, g: 0.95, b: 0.95 } }];
+    containerFrame.cornerRadius = 8;
+
+    // Create header text
+    const headerText = figma.createText();
+    await figma.loadFontAsync({ family: 'Inter', style: 'Bold' });
+    await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+    headerText.fontName = { family: 'Inter', style: 'Bold' };
+    headerText.characters = `Token: ${tokenPath}`;
+    headerText.fontSize = 18;
+    headerText.fills = [{ type: 'SOLID', color: { r: 0.1, g: 0.1, b: 0.1 } }];
+    containerFrame.appendChild(headerText);
+
+    // Count total unique main components
+    const totalGroups = groupEntries.length;
+    const totalVariants = matchingComponents?.length || 0;
+    
+    // Create subtitle with count
+    const subtitleText = figma.createText();
+    subtitleText.fontName = { family: 'Inter', style: 'Regular' };
+    subtitleText.characters = `${totalGroups} component${totalGroups !== 1 ? 's' : ''}${totalVariants > totalGroups ? ` (${totalVariants} variants total)` : ''}`;
+    subtitleText.fontSize = 12;
+    subtitleText.fills = [{ type: 'SOLID', color: { r: 0.4, g: 0.4, b: 0.4 } }];
+    containerFrame.appendChild(subtitleText);
+
+    // Create components grid frame
+    const gridFrame = figma.createFrame();
+    gridFrame.name = 'Components Grid';
+    gridFrame.layoutMode = 'HORIZONTAL';
+    gridFrame.layoutWrap = 'WRAP';
+    gridFrame.primaryAxisSizingMode = 'FIXED';
+    gridFrame.counterAxisSizingMode = 'AUTO';
+    gridFrame.resize(800, 100); // Initial width, height will auto-adjust
+    gridFrame.itemSpacing = 24;
+    gridFrame.counterAxisSpacing = 24;
+    gridFrame.fills = [];
+    containerFrame.appendChild(gridFrame);
+
+    // Process each group (main component with its variants)
+    let createdCount = 0;
+    
+    for (const [mainName, variants] of groupEntries) {
+      const variantCount = variants.length;
+      
+      try {
+        // Create a card frame for this component group
+        const cardFrame = figma.createFrame();
+        cardFrame.name = mainName;
+        cardFrame.layoutMode = 'VERTICAL';
+        cardFrame.primaryAxisSizingMode = 'AUTO';
+        cardFrame.counterAxisSizingMode = 'AUTO';
+        cardFrame.paddingTop = 16;
+        cardFrame.paddingBottom = 16;
+        cardFrame.paddingLeft = 16;
+        cardFrame.paddingRight = 16;
+        cardFrame.itemSpacing = 8;
+        cardFrame.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+        cardFrame.strokes = [{ type: 'SOLID', color: { r: 0.85, g: 0.85, b: 0.85 } }];
+        cardFrame.strokeWeight = 1;
+        cardFrame.cornerRadius = 6;
+
+        // Add component name label
+        const nameLabel = figma.createText();
+        nameLabel.fontName = { family: 'Inter', style: 'Bold' };
+        nameLabel.characters = mainName;
+        nameLabel.fontSize = 12;
+        nameLabel.fills = [{ type: 'SOLID', color: { r: 0.1, g: 0.1, b: 0.1 } }];
+        cardFrame.appendChild(nameLabel);
+
+        // Add match info: show property and value in format "{value} {tag} used in {n} variants"
+        const firstVariant = variants[0];
+        if (firstVariant?.matchDetails && firstVariant.matchDetails.length > 0) {
+          const matchDetail = firstVariant.matchDetails[0];
+          const matchLabel = figma.createText();
+          matchLabel.fontName = { family: 'Inter', style: 'Regular' };
+          
+          // Extract value (before ← if present)
+          let value = '';
+          if (matchDetail.matchedValue) {
+            const valueMatch = matchDetail.matchedValue.match(/^([^←]+)/);
+            if (valueMatch) {
+              value = valueMatch[1].trim();
+            }
+          }
+          
+          // Get property type (cleaned)
+          const propType = matchDetail.property.replace(/\s*\([^)]*\)\s*/g, '').trim();
+          
+          // Format: "{value} {tag} used in {n} variants" or "{value} {tag}"
+          let matchText = value ? `${value} → ${propType}` : propType;
+          if (variantCount > 1) {
+            matchText += ` (${variantCount} variants)`;
+          }
+          
+          matchLabel.characters = matchText;
+          matchLabel.fontSize = 10;
+          matchLabel.fills = [{ type: 'SOLID', color: { r: 0.5, g: 0.5, b: 0.5 } }];
+          cardFrame.appendChild(matchLabel);
+        }
+
+        // Create a horizontal container for all variant instances
+        const instancesContainer = figma.createFrame();
+        instancesContainer.name = 'Variants';
+        instancesContainer.layoutMode = 'HORIZONTAL';
+        instancesContainer.primaryAxisSizingMode = 'AUTO';
+        instancesContainer.counterAxisSizingMode = 'AUTO';
+        instancesContainer.itemSpacing = 12;
+        instancesContainer.fills = [];
+        cardFrame.appendChild(instancesContainer);
+
+        // Create instances for each matched variant
+        let instancesCreated = 0;
+        for (const variant of variants) {
+          try {
+            // Get this variant's component node
+            let componentToInstantiate: ComponentNode | null = null;
+            const node = await figma.getNodeByIdAsync(variant.id);
+            
+            if (node) {
+              if (node.type === 'COMPONENT') {
+                componentToInstantiate = node as ComponentNode;
+              } else if (node.type === 'INSTANCE') {
+                componentToInstantiate = await (node as InstanceNode).getMainComponentAsync();
+              }
+            }
+            
+            if (componentToInstantiate) {
+              // Create an instance from this specific variant
+              const componentInstance = componentToInstantiate.createInstance();
+              
+              // Scale down if too large (only for nodes that support resize)
+              const maxSize = 150;
+              if ('width' in componentInstance && 'height' in componentInstance && 'resize' in componentInstance) {
+                const nodeWithSize = componentInstance as InstanceNode & { width: number; height: number; resize: (w: number, h: number) => void };
+                const scale = Math.min(1, maxSize / Math.max(nodeWithSize.width, nodeWithSize.height));
+                if (scale < 1) {
+                  nodeWithSize.resize(nodeWithSize.width * scale, nodeWithSize.height * scale);
+                }
+              }
+              
+              instancesContainer.appendChild(componentInstance);
+              instancesCreated++;
+            }
+          } catch (error) {
+            console.error(`Failed to create instance for variant ${variant.id}:`, error);
+          }
+        }
+        
+        // Only add the card if we created at least one instance
+        if (instancesCreated > 0) {
+          gridFrame.appendChild(cardFrame);
+          createdCount++;
+        }
+      } catch (error) {
+        console.error(`Failed to create card for ${mainName}:`, error);
+      }
+    }
+
+    // Position the container frame in the viewport
+    const viewport = figma.viewport;
+    containerFrame.x = viewport.center.x - containerFrame.width / 2;
+    containerFrame.y = viewport.center.y - containerFrame.height / 2;
+
+    // Add to current page
+    figma.currentPage.appendChild(containerFrame);
+
+    // Select and zoom to the new frame
+    figma.currentPage.selection = [containerFrame];
+    figma.viewport.scrollAndZoomIntoView([containerFrame]);
+
+    // Notify success
+    figma.notify(`Created collection with ${createdCount} component${createdCount !== 1 ? 's' : ''}`);
+    
+    emit('create-collection-result', {
+      success: true,
+      count: createdCount,
+      frameId: containerFrame.id
+    });
+  } catch (error) {
+    console.error('Failed to create component collection:', error);
+    emit('create-collection-result', {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create collection'
+    });
+  }
+});
 
 on('cancel', () => {
   figma.closePlugin();

@@ -23,6 +23,7 @@ declare const styles: {
   readonly "inline": string;
   readonly "inline-block": string;
   readonly "inline-flex": string;
+  readonly "invisible": string;
   readonly "items-center": string;
   readonly "justify-between": string;
   readonly "max-h-48": string;
