@@ -274,7 +274,24 @@ on('scan-components-for-token-optimized', async (msg: {
     // Use matching service
     const matchingResult = tokenMatchingService.matchTokenToComponents(token, scanResult);
     
-    // Format and emit results...
+    // Format results - now includes mainComponentName/Id for variant grouping
+    const formattedResults = {
+      token: { name: token.name, path: token.path, type: token.type, value: token.value },
+      matchingComponents: matchingResult.matchingComponents.map(match => ({
+        id: match.component.id,
+        name: match.component.name,
+        page: match.component.pageName,
+        type: match.component.type,
+        mainComponentName: match.component.mainComponentName,
+        mainComponentId: match.component.mainComponentId,
+        matches: match.matches.map(m => `${m.property}: ${m.matchedValue}`),
+        matchDetails: match.matches,
+        confidence: match.confidence
+      })),
+      totalMatches: matchingResult.totalMatches,
+      totalComponentsScanned: matchingResult.totalComponentsScanned
+    };
+    
     emit('scan-result', {
       success: true,
       result: formattedResults
@@ -286,7 +303,35 @@ on('scan-components-for-token-optimized', async (msg: {
     });
   }
 });
+
+// Helper to group matching components by their main component name
+function groupByMainComponent(matchingComponents: any[]): { [mainName: string]: any[] } {
+  const grouped: { [mainName: string]: any[] } = {};
+  
+  for (const comp of matchingComponents) {
+    const mainName = comp.mainComponentName || comp.name;
+    if (!grouped[mainName]) {
+      grouped[mainName] = [];
+    }
+    grouped[mainName].push(comp);
+  }
+  
+  return grouped;
+}
 ```
+
+---
+
+## Variant Grouping Support
+
+The optimized service now extracts `mainComponentName` and `mainComponentId` for proper variant grouping:
+
+- **COMPONENT_SET**: Uses its own name as the main component
+- **COMPONENT (variant)**: Uses parent COMPONENT_SET's name
+- **COMPONENT (standalone)**: Uses its own name
+- **INSTANCE**: Resolves main component and checks for parent COMPONENT_SET
+
+This enables the UI to group all variants (e.g., Button/Primary, Button/Secondary) under their main component name (Button).
 
 ---
 

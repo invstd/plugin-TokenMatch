@@ -21,8 +21,9 @@ export class FigmaComponentService {
   // Tokens Studio plugin namespace
   private readonly TOKENS_STUDIO_NAMESPACE = 'tokens';
   
-  // Enable debug logging to discover token keys
-  private readonly DEBUG_LOGGING = true;
+  // Debug logging - DISABLED for production performance
+  // Set to true only when debugging token reference discovery
+  private readonly DEBUG_LOGGING = false;
 
   /**
    * Get ALL shared plugin data keys from a node (for debugging)
@@ -450,6 +451,60 @@ export class FigmaComponentService {
       totalComponents: components.length,
       totalInstances,
       pagesScanned: pages.length,
+      errors: this.errors
+    };
+  }
+
+  /**
+   * Scan components on specific pages only (by page name)
+   * This is much faster than scanning all pages when you know which pages to scan
+   */
+  scanFilteredPages(pageNames: string[]): ScanResult {
+    this.errors = [];
+    const components: ComponentProperties[] = [];
+    let totalInstances = 0;
+    const pages = figma.root.children;
+    
+    // Normalize page names for case-insensitive matching
+    const normalizedPageNames = pageNames.map(n => n.toLowerCase().trim());
+    
+    // Filter to matching pages
+    const matchingPages = pages.filter(page => 
+      page.type === 'PAGE' && 
+      normalizedPageNames.includes(page.name.toLowerCase().trim())
+    );
+
+    // Scan matching pages only
+    for (const page of matchingPages) {
+      if (page.type === 'PAGE') {
+        const pageComponents = page.findAll(
+          node => node.type === 'COMPONENT' || node.type === 'COMPONENT_SET'
+        );
+        const instances = page.findAll(node => node.type === 'INSTANCE');
+        totalInstances += instances.length;
+
+        for (const component of pageComponents) {
+          try {
+            const props = this.extractComponentProperties(component, page.name);
+            if (props) {
+              components.push(props);
+            }
+          } catch (error) {
+            this.errors.push({
+              componentId: component.id,
+              componentName: component.name,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+          }
+        }
+      }
+    }
+
+    return {
+      components,
+      totalComponents: components.length,
+      totalInstances,
+      pagesScanned: matchingPages.length,
       errors: this.errors
     };
   }

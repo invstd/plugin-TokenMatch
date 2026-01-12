@@ -323,16 +323,55 @@ export class FigmaComponentServiceOptimized {
       return null;
     }
 
+    // Cast type - we've already filtered to only valid types above
+    const nodeType = node.type === 'FRAME' ? 'COMPONENT' : node.type as 'COMPONENT' | 'COMPONENT_SET' | 'INSTANCE';
+    
     const properties: ComponentProperties = {
       id: node.id,
       name: node.name,
-      type: node.type,
+      type: nodeType,
       pageName: pageName,
       colors: [],
       typography: [],
       spacing: [],
       effects: []
     };
+
+    // Determine main component name for variants (used for grouping)
+    // For COMPONENT inside COMPONENT_SET: parent's name
+    // For COMPONENT_SET: its own name
+    // For INSTANCE: get from mainComponent's parent
+    if (node.type === 'COMPONENT_SET') {
+      properties.mainComponentName = node.name;
+      properties.mainComponentId = node.id;
+    } else if (node.type === 'COMPONENT') {
+      const component = node as ComponentNode;
+      if (component.parent?.type === 'COMPONENT_SET') {
+        properties.mainComponentName = component.parent.name;
+        properties.mainComponentId = component.parent.id;
+      } else {
+        // Standalone component (not a variant)
+        properties.mainComponentName = node.name;
+        properties.mainComponentId = node.id;
+      }
+    } else if (node.type === 'INSTANCE') {
+      const instance = node as InstanceNode;
+      try {
+        const mainComp = instance.mainComponent;
+        if (mainComp) {
+          if (mainComp.parent?.type === 'COMPONENT_SET') {
+            properties.mainComponentName = mainComp.parent.name;
+            properties.mainComponentId = mainComp.parent.id;
+          } else {
+            properties.mainComponentName = mainComp.name;
+            properties.mainComponentId = mainComp.id;
+          }
+        }
+      } catch {
+        // mainComponent might not be available synchronously
+        properties.mainComponentName = node.name.split(',')[0].trim();
+      }
+    }
 
     // Only extract properties relevant to the token type
     const shouldExtractColors = tokenType === 'all' || tokenType === 'color';
@@ -424,7 +463,7 @@ export class FigmaComponentServiceOptimized {
    * Check if component has any relevant properties extracted
    */
   private hasRelevantProperties(props: ComponentProperties): boolean {
-    return (
+    return !!(
       props.colors.length > 0 ||
       props.typography.length > 0 ||
       props.spacing.length > 0 ||
@@ -868,9 +907,10 @@ export class FigmaComponentServiceOptimized {
 
     // Partial match fallback
     const matches: Set<string> = new Set();
-    for (const [path, componentIds] of this.tokenIndex.byPath) {
+    const entries = Array.from(this.tokenIndex.byPath.entries());
+    for (const [path, componentIds] of entries) {
       if (path.includes(key) || key.includes(path)) {
-        componentIds.forEach(id => matches.add(id));
+        componentIds.forEach((id: string) => matches.add(id));
       }
     }
     return Array.from(matches);
@@ -981,6 +1021,57 @@ export class FigmaComponentServiceOptimized {
       totalComponents: components.length,
       totalInstances,
       pagesScanned: pages.length,
+      errors: this.errors
+    };
+  }
+
+  /**
+   * Scan components on specific pages only (by page name)
+   * This is much faster than scanning all pages when you know which pages to scan
+   */
+  scanFilteredPages(pageNames: string[]): ScanResult {
+    this.errors = [];
+    const components: ComponentProperties[] = [];
+    let totalInstances = 0;
+    const pages = figma.root.children;
+    
+    // Normalize page names for case-insensitive matching
+    const normalizedPageNames = pageNames.map(n => n.toLowerCase().trim());
+    
+    // Filter to matching pages
+    const matchingPages = pages.filter(page => 
+      page.type === 'PAGE' && 
+      normalizedPageNames.includes(page.name.toLowerCase().trim())
+    );
+
+    for (const page of matchingPages) {
+      if (page.type === 'PAGE') {
+        const pageComponents = page.findAll(
+          node => node.type === 'COMPONENT' || node.type === 'COMPONENT_SET'
+        );
+
+        for (const component of pageComponents) {
+          try {
+            const props = this.extractComponentPropertiesOptimized(
+              component, page.name, 'all', true, 3, 0
+            );
+            if (props) components.push(props);
+          } catch (error) {
+            this.errors.push({
+              componentId: component.id,
+              componentName: component.name,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+          }
+        }
+      }
+    }
+
+    return {
+      components,
+      totalComponents: components.length,
+      totalInstances,
+      pagesScanned: matchingPages.length,
       errors: this.errors
     };
   }

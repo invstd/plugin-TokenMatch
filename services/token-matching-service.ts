@@ -35,6 +35,9 @@ export interface MatchingResult {
 }
 
 export class TokenMatchingService {
+  // Minimum confidence threshold to filter out false positives
+  private readonly MIN_CONFIDENCE_THRESHOLD = 0.85;
+
   /**
    * Match a token against scanned components
    */
@@ -45,12 +48,15 @@ export class TokenMatchingService {
       // Match the component and all its children recursively
       const matchDetails = this.matchComponentRecursively(token, component);
 
-      if (matchDetails.length > 0) {
+      // Filter out low-confidence matches
+      const highConfidenceMatches = matchDetails.filter(m => m.confidence >= this.MIN_CONFIDENCE_THRESHOLD);
+
+      if (highConfidenceMatches.length > 0) {
         const avgConfidence =
-          matchDetails.reduce((sum, m) => sum + m.confidence, 0) / matchDetails.length;
+          highConfidenceMatches.reduce((sum, m) => sum + m.confidence, 0) / highConfidenceMatches.length;
         matchingComponents.push({
           component,
-          matches: matchDetails,
+          matches: highConfidenceMatches,
           confidence: avgConfidence
         });
       }
@@ -168,71 +174,36 @@ export class TokenMatchingService {
             confidence: 1.0
           });
         }
-        // Partial path match - still high confidence
-        else if (normalizedRef.includes(normalizedToken) || normalizedToken.includes(normalizedRef)) {
+        // Only match if the reference ends with the full token path (e.g., "theme.kds.color.x" matches "kds.color.x")
+        // OR if the token path ends with the full reference (for shortened refs)
+        else if (normalizedRef.endsWith('.' + normalizedToken) || normalizedRef === normalizedToken ||
+                 normalizedToken.endsWith('.' + normalizedRef) || normalizedToken === normalizedRef) {
           matches.push({
             property: `${color.type} color (token ref)`,
             propertyType: 'color',
             matchedValue: `${color.hex} ← ${color.tokenReference}`,
             tokenValue: tokenPath,
-            confidence: 0.85
+            confidence: 0.9
           });
         }
       }
     }
 
-    // If we found reference matches, return them (don't fall back to value matching)
-    if (matches.length > 0) {
-      return matches;
+    // If we found reference matches with high confidence, return them (don't fall back to value matching)
+    // Only consider matches with confidence >= 0.9 (exact or proper suffix match)
+    const highConfidenceMatches = matches.filter(m => m.confidence >= 0.9);
+    if (highConfidenceMatches.length > 0) {
+      return highConfidenceMatches;
     }
 
-    // Second pass: Fall back to value matching only if no reference matches
-    // This requires a valid token value
-    if (!tokenValue) {
-      return matches;
-    }
-
-    for (const color of component.colors) {
-      const componentHex = this.normalizeHex(color.hex);
-      const componentRgba = this.normalizeRgba(color.rgba);
-      const tokenHex = this.normalizeHex(tokenValue);
-      const tokenRgba = this.normalizeRgba(tokenValue);
-
-      // Exact hex match
-      if (tokenHex && componentHex && tokenHex === componentHex) {
-        matches.push({
-          property: `${color.type} color (value)`,
-          propertyType: 'color',
-          matchedValue: color.hex,
-          tokenValue: String(token.value),
-          confidence: 0.7 // Lower confidence for value-only matches
-        });
-      }
-      // Exact rgba match (with tolerance for opacity)
-      else if (tokenRgba && componentRgba) {
-        const tokenRgbaValues = this.parseRgba(tokenValue);
-        const componentRgbaValues = this.parseRgba(color.rgba);
-
-        if (tokenRgbaValues && componentRgbaValues) {
-          const rDiff = Math.abs(tokenRgbaValues.r - componentRgbaValues.r);
-          const gDiff = Math.abs(tokenRgbaValues.g - componentRgbaValues.g);
-          const bDiff = Math.abs(tokenRgbaValues.b - componentRgbaValues.b);
-          const aDiff = Math.abs(tokenRgbaValues.a - componentRgbaValues.a);
-
-          // Allow small differences (rounding errors)
-          if (rDiff < 2 && gDiff < 2 && bDiff < 2 && aDiff < 0.01) {
-            matches.push({
-              property: `${color.type} color (value)`,
-              propertyType: 'color',
-              matchedValue: color.rgba,
-              tokenValue: String(token.value),
-              confidence: 0.7
-            });
-          }
-        }
-      }
-    }
-
+    // VALUE-BASED MATCHING DISABLED for colors
+    // Only use token reference matching to avoid false positives
+    // Colors should always have token references if properly linked in Tokens Studio
+    // 
+    // Previously we did value-based matching as a fallback, but this caused
+    // false positives when components happened to have the same color value
+    // but weren't actually using the token.
+    
     return matches;
   }
 
@@ -390,42 +361,29 @@ export class TokenMatchingService {
             confidence: 1.0
           });
         }
-        // Partial path match
-        else if (normalizedRef.includes(normalizedToken) || normalizedToken.includes(normalizedRef)) {
+        // Only match if the reference ends with the full token path (proper suffix/prefix)
+        else if (normalizedRef.endsWith('.' + normalizedToken) || normalizedRef === normalizedToken ||
+                 normalizedToken.endsWith('.' + normalizedRef) || normalizedToken === normalizedRef) {
           matches.push({
             property: `${displayType} (token ref)`,
             propertyType: 'spacing',
             matchedValue: `${spacing.value}${spacing.unit} ← ${spacing.tokenReference}`,
             tokenValue: tokenPath,
-            confidence: 0.85
+            confidence: 0.9
           });
         }
       }
     }
 
-    // If we found reference matches, return them
-    if (matches.length > 0) {
-      return matches;
+    // If we found high confidence reference matches, return them (skip value matching)
+    const highConfidenceMatches = matches.filter(m => m.confidence >= 0.9);
+    if (highConfidenceMatches.length > 0) {
+      return highConfidenceMatches;
     }
 
-    // Second pass: Fall back to value matching
-    if (tokenValue === null) return matches;
-
-    for (const spacing of spacingToCheck) {
-      const componentValue = spacing.value;
-      const tolerance = 0.5; // Allow small differences for floating point
-
-      if (Math.abs(tokenValue - componentValue) < tolerance) {
-        const displayType = this.formatSpacingType(spacing.type);
-        matches.push({
-          property: displayType,
-          propertyType: 'spacing',
-          matchedValue: `${spacing.value}${spacing.unit}`,
-          tokenValue: String(token.value),
-          confidence: 0.7
-        });
-      }
-    }
+    // VALUE-BASED MATCHING DISABLED for spacing
+    // Only use token reference matching to avoid false positives
+    // Spacing tokens should have references if properly linked in Tokens Studio
 
     return matches;
   }
@@ -475,80 +433,28 @@ export class TokenMatchingService {
             confidence: 1.0
           });
         }
-        // Partial path match
-        else if (normalizedRef.includes(normalizedToken) || normalizedToken.includes(normalizedRef)) {
+        // Only match if the reference ends with the full token path (proper suffix/prefix)
+        else if (normalizedRef.endsWith('.' + normalizedToken) || normalizedRef === normalizedToken ||
+                 normalizedToken.endsWith('.' + normalizedRef) || normalizedToken === normalizedRef) {
           matches.push({
             property: `${effect.type} (token ref)`,
             propertyType: 'effect',
             matchedValue: `${effect.type} ← ${effect.tokenReference}`,
             tokenValue: tokenPath,
-            confidence: 0.85
+            confidence: 0.9
           });
         }
       }
     }
 
-    // If we found reference matches, return them
-    if (matches.length > 0) {
-      return matches;
+    // If we found high confidence reference matches, return them (skip value matching)
+    const highConfidenceMatches = matches.filter(m => m.confidence >= 0.9);
+    if (highConfidenceMatches.length > 0) {
+      return highConfidenceMatches;
     }
 
-    // Second pass: Fall back to value matching for shadow tokens
-    if (typeof token.value !== 'object' || token.value === null) {
-      return matches;
-    }
-
-    const tokenObj = token.value as any;
-
-    for (const effect of component.effects) {
-      if (effect.type === 'drop-shadow' || effect.type === 'inner-shadow') {
-        let confidence = 0;
-        const matchedProps: string[] = [];
-
-        // Check radius/blur
-        const tokenRadius = tokenObj.blur || tokenObj.radius || tokenObj.spreadRadius;
-        if (tokenRadius !== undefined && effect.radius !== undefined) {
-          const radiusDiff = Math.abs(Number(tokenRadius) - effect.radius);
-          if (radiusDiff < 1) {
-            confidence += 0.4;
-            matchedProps.push(`radius: ${effect.radius}px`);
-          }
-        }
-
-        // Check color
-        if (tokenObj.color && effect.color) {
-          const tokenColor = this.normalizeColor(tokenObj.color);
-          const effectRgba = this.rgbaToString(effect.color);
-          if (tokenColor && this.colorsMatch(tokenColor, effectRgba)) {
-            confidence += 0.4;
-            matchedProps.push(`color: ${effectRgba}`);
-          }
-        }
-
-        // Check offset
-        if (tokenObj.offset && effect.offset) {
-          const tokenX = Number(tokenObj.offset.x || 0);
-          const tokenY = Number(tokenObj.offset.y || 0);
-          const effectX = effect.offset.x || 0;
-          const effectY = effect.offset.y || 0;
-
-          if (Math.abs(tokenX - effectX) < 1 && Math.abs(tokenY - effectY) < 1) {
-            confidence += 0.2;
-            matchedProps.push(`offset: ${effectX}, ${effectY}`);
-          }
-        }
-
-        if (confidence > 0) {
-          matches.push({
-            property: effect.type,
-            propertyType: 'effect',
-            matchedValue: matchedProps.join(', '),
-            tokenValue: JSON.stringify(token.value),
-            confidence: Math.min(confidence, 0.7) // Lower confidence for value-only matches
-          });
-        }
-      }
-    }
+    // VALUE-BASED MATCHING DISABLED for effects
+    // Only use token reference matching to avoid false positives
 
     return matches;
   }

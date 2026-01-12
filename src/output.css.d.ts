@@ -26,6 +26,7 @@ declare const styles: {
   readonly "invisible": string;
   readonly "items-center": string;
   readonly "justify-between": string;
+  readonly "lowercase": string;
   readonly "max-h-48": string;
   readonly "outline": string;
   readonly "overflow-y-auto": string;
@@ -40,6 +41,7 @@ declare const styles: {
   readonly "shadow": string;
   readonly "space-y-2": string;
   readonly "space-y-4": string;
+  readonly "static": string;
   readonly "table": string;
   readonly "text-3xl": string;
   readonly "text-base": string;

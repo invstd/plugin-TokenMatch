@@ -69,6 +69,38 @@ export class GitHubTokenService {
   }
 
   /**
+   * OPTIMIZATION: Get the latest commit SHA for a branch
+   * Used for cache invalidation - if SHA hasn't changed, tokens haven't changed
+   */
+  async getLatestCommitSha(
+    owner: string,
+    repo: string,
+    branch: string,
+    token: string
+  ): Promise<string | null> {
+    try {
+      const url = `https://api.github.com/repos/${owner}/${repo}/commits/${branch}`;
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      
+      if (!response.ok) {
+        console.warn(`Failed to get commit SHA: ${response.status}`);
+        return null;
+      }
+      
+      const data = await response.json();
+      return data.sha || null;
+    } catch (error) {
+      console.warn('Failed to get latest commit SHA:', error);
+      return null;
+    }
+  }
+
+  /**
    * Fetch file contents from GitHub
    */
   async fetchFileContents(
@@ -356,8 +388,77 @@ export class GitHubTokenService {
     return parsedTokens;
   }
 
+  // ============================================================================
+  // OPTIMIZED: Pre-compiled exclude patterns (compiled once at class level)
+  // ============================================================================
+  private static readonly EXCLUDE_PATTERNS = [
+    /package\.json$/i,
+    /package-lock\.json$/i,
+    /tsconfig\.json$/i,
+    /\.config\.json$/i,
+    /eslint.*\.json$/i,
+    /prettier.*\.json$/i,
+    /jest\.config\.json$/i,
+    /webpack\.config\.json$/i,
+    /^\$metadata\.json$/i,
+    /^\$themes\.json$/i,
+    /\(ignore\)\.json$/i,
+    /node_modules\//i,
+    /\.github\//i,
+    /\.vscode\//i
+  ];
+
+  /**
+   * Check if a file should be excluded from token detection
+   */
+  private isExcludedFile(filePath: string): boolean {
+    const fileName = filePath.split('/').pop()?.toLowerCase() || '';
+    return GitHubTokenService.EXCLUDE_PATTERNS.some(pattern => 
+      pattern.test(fileName) || pattern.test(filePath)
+    );
+  }
+
+  /**
+   * OPTIMIZED: Fetch entire repository tree in a single API call
+   * This is MUCH faster than recursive directory fetching
+   */
+  async fetchRepoTree(
+    owner: string,
+    repo: string,
+    branch: string,
+    token: string
+  ): Promise<Array<{ path: string; type: string; size?: number }>> {
+    try {
+      const url = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Check for truncated response (repo too large)
+      if (data.truncated) {
+        console.warn('Repository tree was truncated - falling back to recursive fetch');
+        return []; // Signal to use fallback
+      }
+      
+      return data.tree || [];
+    } catch (error) {
+      console.error('Failed to fetch repo tree:', error);
+      return []; // Signal to use fallback
+    }
+  }
+
   /**
    * Auto-detect token files in a directory
+   * OPTIMIZED: Uses GitHub Trees API for single-call file discovery when possible
    */
   async detectTokenFiles(
     owner: string,
@@ -366,39 +467,64 @@ export class GitHubTokenService {
     token: string,
     directoryPath: string = ''
   ): Promise<string[]> {
-    const contents = await this.fetchDirectoryContents(owner, repo, branch, token, directoryPath);
+    // Try the optimized Trees API approach first
+    const tree = await this.fetchRepoTree(owner, repo, branch, token);
     
-    // Files to exclude (common non-token JSON files)
-    const excludePatterns = [
-      /package\.json$/i,
-      /package-lock\.json$/i,
-      /tsconfig\.json$/i,
-      /\.config\.json$/i,
-      /eslint.*\.json$/i,
-      /prettier.*\.json$/i,
-      /jest\.config\.json$/i,
-      /webpack\.config\.json$/i,
-      /^\$metadata\.json$/i,
-      /^\$themes\.json$/i,
-      /\(ignore\)\.json$/i
-    ];
+    if (tree.length > 0) {
+      // FAST PATH: Filter the tree in memory (no additional API calls)
+      const normalizedDirPath = directoryPath.replace(/^\/|\/$/g, ''); // Remove leading/trailing slashes
+      
+      return tree
+        .filter(item => {
+          // Must be a file (blob)
+          if (item.type !== 'blob') return false;
+          
+          // Must be a .json file
+          if (!item.path.toLowerCase().endsWith('.json')) return false;
+          
+          // Must be in the specified directory (or any dir if empty)
+          if (normalizedDirPath && !item.path.startsWith(normalizedDirPath + '/') && item.path !== normalizedDirPath) {
+            return false;
+          }
+          
+          // Must not be excluded
+          return !this.isExcludedFile(item.path);
+        })
+        .map(item => item.path);
+    }
+    
+    // FALLBACK: Use recursive directory fetching (slower, for truncated repos)
+    return this.detectTokenFilesRecursive(owner, repo, branch, token, directoryPath);
+  }
 
+  /**
+   * Fallback: Recursive directory-based file detection
+   * Used when Trees API returns truncated results
+   */
+  private async detectTokenFilesRecursive(
+    owner: string,
+    repo: string,
+    branch: string,
+    token: string,
+    directoryPath: string = ''
+  ): Promise<string[]> {
+    const contents = await this.fetchDirectoryContents(owner, repo, branch, token, directoryPath);
     const tokenFiles: string[] = [];
 
     for (const item of contents) {
       if (item.type === 'file') {
         const fileName = item.name.toLowerCase();
         // Include all .json files except those in exclude list
-        if (fileName.endsWith('.json')) {
-          const shouldExclude = excludePatterns.some(pattern => pattern.test(fileName));
-          if (!shouldExclude) {
-            tokenFiles.push(item.path);
-          }
+        if (fileName.endsWith('.json') && !this.isExcludedFile(item.path)) {
+          tokenFiles.push(item.path);
         }
       } else if (item.type === 'dir') {
-        // Recursively search in subdirectories
-        const subFiles = await this.detectTokenFiles(owner, repo, branch, token, item.path);
-        tokenFiles.push(...subFiles);
+        // Skip excluded directories
+        if (!this.isExcludedFile(item.path + '/')) {
+          // Recursively search in subdirectories
+          const subFiles = await this.detectTokenFilesRecursive(owner, repo, branch, token, item.path);
+          tokenFiles.push(...subFiles);
+        }
       }
     }
 

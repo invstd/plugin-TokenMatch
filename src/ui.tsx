@@ -1,8 +1,29 @@
-import { render, Button, Textbox, Dropdown, IconButton, Text, Stack, Container, Inline } from '@create-figma-plugin/ui';
+import { render, Button, Textbox, Dropdown, IconButton, Text, Stack, Container, Inline, VerticalSpace, Muted } from '@create-figma-plugin/ui';
 import { h } from 'preact';
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'preact/hooks';
 import { on, emit } from '@create-figma-plugin/utilities';
 import '!./output.css';
+
+// Debounce utility for search optimization
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
+// Constants for virtualization
+const VISIBLE_RESULTS_LIMIT = 20; // Show 20 results at a time
+const RESULTS_INCREMENT = 20; // Load 20 more when scrolling
 
 function Plugin() {
   const [currentView, setCurrentView] = useState<'main' | 'settings' | 'info'>('main');
@@ -29,10 +50,21 @@ function Plugin() {
   const [toast, setToast] = useState<string | null>(null);
   const [matchingResults, setMatchingResults] = useState<any | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<number | null>(null); // 0-100 percentage
   const [inspecting, setInspecting] = useState(false);
   const [inspectResults, setInspectResults] = useState<any | null>(null);
   const [windowSize, setWindowSize] = useState({ width: 400, height: 550 });
   const resizeRef = useRef<{ startX: number; startY: number; startWidth: number; startHeight: number } | null>(null);
+  
+  // Virtualization state for results
+  const [visibleResultsCount, setVisibleResultsCount] = useState(VISIBLE_RESULTS_LIMIT);
+  const resultsContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Page filter for selective scanning
+  const [pageFilter, setPageFilter] = useState('');
+  
+  // Debounced token search (300ms delay)
+  const debouncedTokenSearch = useDebounce(tokenSearch, 300);
 
   // Refs to access current values in callbacks (fixes closure issues)
   const repoUrlRef = useRef(repoUrl);
@@ -61,11 +93,16 @@ function Plugin() {
       if (msg.message) {
         setLoadingMessage(msg.message);
       }
+      // Update progress percentage if provided
+      if (typeof msg.progress === 'number') {
+        setScanProgress(msg.progress);
+      }
     });
 
     on('scan-result', (msg: any) => {
       setScanning(false);
       setLoadingMessage('');
+      setScanProgress(null); // Reset progress
       
       if (msg.success) {
         setMatchingResults(msg.result);
@@ -143,16 +180,39 @@ function Plugin() {
 
     on('tokens-progress', (msg: any) => {
       const message = msg.message || '';
-      // Simplify messages for main UI - just show "Scanning" or "Processing"
-      if (message.toLowerCase().includes('processing') || 
+      // Show more detailed messages including cache status
+      if (message.toLowerCase().includes('cached')) {
+        setLoadingMessage('Using cached tokens...');
+      } else if (message.toLowerCase().includes('processing') || 
           message.toLowerCase().includes('found') ||
           message.toLowerCase().includes('token')) {
         setLoadingMessage('Processing...');
       } else if (message.toLowerCase().includes('scanning') || 
-                 message.toLowerCase().includes('connecting')) {
+                 message.toLowerCase().includes('connecting') ||
+                 message.toLowerCase().includes('checking')) {
         setLoadingMessage('Scanning...');
+      } else if (message.toLowerCase().includes('fetching')) {
+        setLoadingMessage('Fetching...');
       } else {
         setLoadingMessage('Processing...');
+      }
+    });
+
+    // Handle chunked token streaming for progressive loading
+    on('tokens-chunk', (msg: any) => {
+      const { tokens, chunkIndex, isLast } = msg;
+      
+      if (chunkIndex === 0) {
+        // First chunk - replace any existing tokens
+        setFetchedTokens(tokens || []);
+      } else {
+        // Subsequent chunks - append to existing
+        setFetchedTokens(prev => [...prev, ...(tokens || [])]);
+      }
+      
+      // Update loading message with progress
+      if (!isLast) {
+        setLoadingMessage(`Loading tokens... (chunk ${chunkIndex + 1})`);
       }
     });
 
@@ -163,6 +223,7 @@ function Plugin() {
         const totalFiles = msg.metadata?.totalFiles ?? filesProcessed;
         const perFileCounts = msg.metadata?.perFileCounts;
         const errors = msg.metadata?.errors;
+        const fromCache = msg.metadata?.fromCache ?? false;
 
         setFetchedTokens(msg.tokens || []);
         setTokenCount(total);
@@ -171,6 +232,12 @@ function Plugin() {
         setParseErrors(errors || []);
         setError(null);
         setLoading(false);
+        
+        // Show brief toast if loaded from cache
+        if (fromCache) {
+          setToast('Loaded from cache (no changes detected)');
+          setTimeout(() => setToast(null), 2000);
+        }
         setLoadingMessage('');
 
         // If still zero tokens, surface a helpful hint
@@ -314,12 +381,21 @@ function Plugin() {
     if (!selectedToken) return;
     setScanning(true);
     setLoadingMessage('Starting scan...');
+    setScanProgress(null); // Reset progress
     setMatchingResults(null);
     setError(null);
+    setVisibleResultsCount(VISIBLE_RESULTS_LIMIT); // Reset virtualization
+    
+    // Parse page filter (comma-separated page names)
+    const pageFilterArray = pageFilter.trim() 
+      ? pageFilter.split(',').map(p => p.trim()).filter(Boolean)
+      : [];
+    
     emit('scan-components-for-token', {
       token: selectedToken,
       scanAll: scanOption === 'all',
-      scanSelection: scanOption === 'selection'
+      scanSelection: scanOption === 'selection',
+      pageFilter: pageFilterArray.length > 0 ? pageFilterArray : undefined
     });
   };
 
@@ -413,13 +489,30 @@ function Plugin() {
     return searchTerms.every(term => pathLower.includes(term));
   };
 
-  const filteredTokens = tokenSearch.length > 0 
-    ? fetchedTokens.filter(t => {
-        const fullPath = getTokenFullPath(t);
-        const value = safeString(t.value);
-        return matchesSearch(fullPath, tokenSearch) || matchesSearch(value, tokenSearch);
-      })
-    : [];
+  // Use debounced search for filtering (prevents lag during typing)
+  const filteredTokens = useMemo(() => {
+    if (debouncedTokenSearch.length === 0) return [];
+    return fetchedTokens.filter(t => {
+      const fullPath = getTokenFullPath(t);
+      const value = safeString(t.value);
+      return matchesSearch(fullPath, debouncedTokenSearch) || matchesSearch(value, debouncedTokenSearch);
+    });
+  }, [fetchedTokens, debouncedTokenSearch]);
+  
+  // Reset visible count when results change
+  useEffect(() => {
+    setVisibleResultsCount(VISIBLE_RESULTS_LIMIT);
+  }, [matchingResults]);
+  
+  // Handle scroll to load more results (virtualization)
+  const handleResultsScroll = useCallback((e: Event) => {
+    const target = e.target as HTMLDivElement;
+    const { scrollTop, scrollHeight, clientHeight } = target;
+    // Load more when 80% scrolled
+    if (scrollTop + clientHeight >= scrollHeight * 0.8) {
+      setVisibleResultsCount(prev => prev + RESULTS_INCREMENT);
+    }
+  }, []);
 
   // Handle Enter key to select first matching token
   const handleTokenSearchKeyDown = (e: KeyboardEvent) => {
@@ -636,12 +729,24 @@ function Plugin() {
               <Dropdown
                 value={scanOption}
                 options={[
-                  { value: 'all', text: 'On all pages (slow)' },
-                  { value: 'current', text: 'Current page' },
-                  { value: 'selection', text: 'Selection' }
+                  { value: 'all', text: 'All pages' },
+                  { value: 'current', text: 'Current page (faster)' },
+                  { value: 'selection', text: 'Selection only (fastest)' }
                 ]}
                 onValueChange={(value) => setScanOption(value as any)}
               />
+              {scanOption === 'all' && (
+                <div style={{ marginTop: '8px' }}>
+                  <Textbox
+                    value={pageFilter}
+                    placeholder="Filter pages (comma-separated, e.g. Components, Library)"
+                    onValueInput={setPageFilter}
+                  />
+                  <VerticalSpace space="extraSmall" />
+                  <Muted>Leave empty to scan all pages. Use page names to scan specific pages only.</Muted>
+                  <VerticalSpace space="extraSmall" />
+                </div>
+              )}
             </Stack>
 
             {error && (
@@ -652,9 +757,43 @@ function Plugin() {
 
             <Button onClick={handleScan} disabled={!canScan || scanning}>
               {scanning 
-                ? (loadingMessage || 'Scanning...') 
+                ? (scanProgress !== null 
+                    ? `Scanning... ${scanProgress}%` 
+                    : (loadingMessage || 'Scanning...'))
                 : (canScan ? 'Scan for Token Usage' : 'Scan (select a token first)')}
             </Button>
+            
+            {/* Progress bar during scanning */}
+            {scanning && scanProgress !== null && (
+              <div style={{ 
+                width: '100%', 
+                height: '4px', 
+                backgroundColor: 'var(--figma-color-bg-tertiary)',
+                borderRadius: '2px',
+                overflow: 'hidden',
+                marginTop: '8px'
+              }}>
+                <div style={{ 
+                  width: `${scanProgress}%`, 
+                  height: '100%', 
+                  backgroundColor: 'var(--figma-color-bg-brand)',
+                  borderRadius: '2px',
+                  transition: 'width 0.3s ease'
+                }} />
+              </div>
+            )}
+            
+            {/* Show current page being scanned */}
+            {scanning && loadingMessage && (
+              <Text style={{ 
+                fontSize: '10px', 
+                color: 'var(--figma-color-text-secondary)',
+                marginTop: '4px',
+                textAlign: 'center'
+              }}>
+                {loadingMessage}
+              </Text>
+            )}
 
             {matchingResults && (
               <div style={{ 
@@ -706,13 +845,15 @@ function Plugin() {
                   </div>
                 </div>
 
-                {/* Component cards container */}
+                {/* Component cards container with virtualization */}
                 {matchingResults.matchingComponents.length > 0 ? (
                   <div 
+                    ref={resultsContainerRef}
+                    onScroll={handleResultsScroll as any}
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '12px'
+                      gap: '8px'
                     }}
                   >
                     {(() => {
@@ -729,7 +870,14 @@ function Plugin() {
                         groupedComponents.get(mainName)!.push(comp);
                       }
                       
-                      return Array.from(groupedComponents.entries()).map(([mainName, variants], groupIndex) => {
+                      // Virtualize: only render visible results
+                      const allEntries = Array.from(groupedComponents.entries());
+                      const visibleEntries = allEntries.slice(0, visibleResultsCount);
+                      const hasMore = allEntries.length > visibleResultsCount;
+                      
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                          {visibleEntries.map(([mainName, variants], groupIndex) => {
                         // Use the first variant for display details
                         const comp = variants[0];
                         const variantCount = variants.length;
@@ -988,8 +1136,22 @@ function Plugin() {
                               )}
                             </div>
                           </div>
-                        );
-                      });
+                          );
+                          })}
+                          {hasMore && (
+                            <div 
+                              style={{ 
+                                padding: '12px', 
+                                textAlign: 'center',
+                                color: 'var(--figma-color-text-secondary)',
+                                fontSize: '11px'
+                              }}
+                            >
+                              Scroll for more... ({allEntries.length - visibleResultsCount} remaining)
+                            </div>
+                          )}
+                        </div>
+                      );
                     })()}
                   </div>
                 ) : (
