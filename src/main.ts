@@ -31,6 +31,41 @@ const tokenMatchingService = new TokenMatchingService();
 // Use optimized service by default for better performance
 const USE_OPTIMIZED_SCANNER = true;
 
+// Track last known document version for change detection
+let lastKnownDocumentVersion: string | null = null;
+
+/**
+ * Check if document has changed since last scan
+ * Useful for detecting when cache should be invalidated
+ */
+function hasDocumentChanged(): boolean {
+  // Create a simple version hash from page structure
+  const pages = figma.root.children
+    .filter(p => p.type === 'PAGE')
+    .map(p => p.id)
+    .join(',');
+
+  if (lastKnownDocumentVersion === null) {
+    lastKnownDocumentVersion = pages;
+    return false;
+  }
+
+  const changed = pages !== lastKnownDocumentVersion;
+  lastKnownDocumentVersion = pages;
+  return changed;
+}
+
+/**
+ * Clear component cache if document has changed
+ * This provides automatic incremental invalidation
+ */
+async function checkAndInvalidateCache(): Promise<void> {
+  if (hasDocumentChanged()) {
+    console.log('[Cache] Document changed, clearing component cache');
+    await figmaComponentServiceOptimized.clearCache();
+  }
+}
+
 // ============================================================================
 // OPTIMIZATION: Token caching with Git SHA-based invalidation
 // ============================================================================
@@ -751,7 +786,7 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
     const scanAllPages = scanAll === true;
     const scanSelected = scanSelection === true;
     const hasPageFilter = pageFilter && pageFilter.length > 0;
-    
+
     if (!token) {
       emit('scan-result', {
         success: false,
@@ -759,6 +794,9 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
       });
       return;
     }
+
+    // Check for document changes and invalidate cache if needed
+    await checkAndInvalidateCache();
 
     // Determine token type for optimized extraction
     const tokenType = token.type || 'all';
@@ -794,13 +832,14 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
       const scanOptions: ScanOptions = {
         tokenType: tokenType as any,
         useCache: true,
+        usePersistentCache: true, // Enable persistent cache with document version tracking
         chunkSize: 100,
         maxDepth: 3,
         includeChildren: true,
         pageFilter: hasPageFilter ? pageFilter : undefined,
         onProgress: (progress) => {
           const percent = Math.round((progress.currentPage / progress.totalPages) * 100);
-          emit('scan-progress', { 
+          emit('scan-progress', {
             message: `Page ${progress.currentPage}/${progress.totalPages}: ${progress.currentPageName} (${progress.componentsFound} found)`,
             progress: percent
           });

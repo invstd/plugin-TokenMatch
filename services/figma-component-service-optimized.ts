@@ -40,6 +40,8 @@ export interface ScanOptions {
   maxDepth?: number;
   /** Whether to use cached results */
   useCache?: boolean;
+  /** Whether to use persistent storage cache (figma.clientStorage) */
+  usePersistentCache?: boolean;
   /** Specific page names to scan (empty = all) */
   pageFilter?: string[];
 }
@@ -57,6 +59,17 @@ interface CacheEntry {
   components: ComponentProperties[];
   timestamp: number;
   pageVersion?: number;
+  documentVersion?: string; // Figma document version for incremental invalidation
+  editSessionId?: string;   // Figma edit session for change detection
+}
+
+interface PersistentCacheEntry {
+  components: ComponentProperties[];
+  timestamp: number;
+  documentVersion: string;
+  editSessionId: string;
+  tokenType: string;
+  pageNames: string[];
 }
 
 interface TokenIndex {
@@ -91,11 +104,22 @@ export class FigmaComponentServiceOptimized {
   }
 
   /**
-   * Clear all caches
+   * Clear all caches (memory and persistent)
    */
-  clearCache(): void {
+  async clearCache(): Promise<void> {
     this.cache.clear();
     this.tokenIndex = { byPath: new Map(), byValue: new Map() };
+
+    // Clear persistent cache
+    try {
+      const keys = await figma.clientStorage.keysAsync();
+      const cacheKeys = keys.filter(key => key.startsWith('componentCache_'));
+      for (const key of cacheKeys) {
+        await figma.clientStorage.deleteAsync(key);
+      }
+    } catch (error) {
+      console.error('Error clearing persistent cache:', error);
+    }
   }
 
   /**
@@ -110,6 +134,178 @@ export class FigmaComponentServiceOptimized {
   }
 
   /**
+   * Get document version information for cache invalidation
+   * Uses document ID and a hash of page names/IDs as a proxy for version
+   */
+  private getDocumentVersion(): { documentVersion: string; editSessionId: string } {
+    // Create a version string from document structure
+    // This changes when pages are added/removed/renamed
+    const pages = figma.root.children
+      .filter(p => p.type === 'PAGE')
+      .map(p => `${p.id}:${p.name}`)
+      .join('|');
+
+    const versionHash = pages.split('').reduce((hash, char) => {
+      return ((hash << 5) - hash) + char.charCodeAt(0);
+    }, 0).toString(36);
+
+    return {
+      documentVersion: versionHash,
+      editSessionId: figma.root.id // Use root ID as a session identifier
+    };
+  }
+
+  /**
+   * Generate cache key for persistent storage
+   */
+  private getPersistentCacheKey(tokenType: string, pageNames: string[]): string {
+    const sortedPages = pageNames.slice().sort().join(',');
+    return `componentCache_${tokenType}_${sortedPages || 'all'}`;
+  }
+
+  /**
+   * Get from persistent cache if valid
+   */
+  private async getFromPersistentCache(
+    tokenType: string,
+    pageNames: string[]
+  ): Promise<ComponentProperties[] | null> {
+    try {
+      const cacheKey = this.getPersistentCacheKey(tokenType, pageNames);
+      const cached = await figma.clientStorage.getAsync(cacheKey) as PersistentCacheEntry | null;
+
+      if (!cached) return null;
+
+      // Validate cache against document version
+      const currentVersion = this.getDocumentVersion();
+
+      // Cache is valid if:
+      // 1. Document version matches (no major changes)
+      // 2. Edit session matches (same document instance)
+      // 3. Not expired (5 minutes)
+      const isValid =
+        cached.documentVersion === currentVersion.documentVersion &&
+        cached.editSessionId === currentVersion.editSessionId &&
+        Date.now() - cached.timestamp < this.cacheMaxAge;
+
+      if (isValid) {
+        if (this.debugLogging) {
+          console.log(`[Cache] HIT - Persistent cache valid for ${tokenType} (${pageNames.length} pages)`);
+        }
+        return cached.components;
+      } else {
+        if (this.debugLogging) {
+          console.log(`[Cache] MISS - Invalidated (version: ${cached.documentVersion} vs ${currentVersion.documentVersion})`);
+        }
+        // Clean up invalid cache
+        await figma.clientStorage.deleteAsync(cacheKey);
+      }
+    } catch (error) {
+      if (this.debugLogging) {
+        console.error('Error reading persistent cache:', error);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Save to persistent cache
+   */
+  private async saveToPersistentCache(
+    tokenType: string,
+    pageNames: string[],
+    components: ComponentProperties[]
+  ): Promise<void> {
+    try {
+      const cacheKey = this.getPersistentCacheKey(tokenType, pageNames);
+      const version = this.getDocumentVersion();
+
+      const entry: PersistentCacheEntry = {
+        components,
+        timestamp: Date.now(),
+        documentVersion: version.documentVersion,
+        editSessionId: version.editSessionId,
+        tokenType,
+        pageNames
+      };
+
+      await figma.clientStorage.setAsync(cacheKey, entry);
+
+      if (this.debugLogging) {
+        console.log(`[Cache] SAVED - ${components.length} components for ${tokenType} (version: ${version.documentVersion})`);
+      }
+    } catch (error) {
+      if (this.debugLogging) {
+        console.error('Error saving persistent cache:', error);
+      }
+    }
+  }
+
+  /**
+   * Invalidate cache entries that include specific pages
+   * Use this for incremental invalidation when specific pages change
+   */
+  async invalidatePagesCache(pageNames: string[]): Promise<void> {
+    try {
+      const keys = await figma.clientStorage.keysAsync();
+      const cacheKeys = keys.filter(key => key.startsWith('componentCache_'));
+
+      for (const cacheKey of cacheKeys) {
+        try {
+          const entry = await figma.clientStorage.getAsync(cacheKey) as PersistentCacheEntry | null;
+          if (!entry) continue;
+
+          // Check if this cache entry includes any of the changed pages
+          const hasChangedPage = entry.pageNames.some(pageName =>
+            pageNames.some(changedPage =>
+              pageName.toLowerCase() === changedPage.toLowerCase()
+            )
+          );
+
+          if (hasChangedPage) {
+            await figma.clientStorage.deleteAsync(cacheKey);
+            if (this.debugLogging) {
+              console.log(`[Cache] INVALIDATED - ${cacheKey} (affected pages: ${pageNames.join(', ')})`);
+            }
+          }
+        } catch (error) {
+          // Skip individual errors
+        }
+      }
+    } catch (error) {
+      if (this.debugLogging) {
+        console.error('Error invalidating page caches:', error);
+      }
+    }
+  }
+
+  /**
+   * Get all cached page names (useful for debugging)
+   */
+  async getCachedPageNames(): Promise<string[]> {
+    try {
+      const keys = await figma.clientStorage.keysAsync();
+      const cacheKeys = keys.filter(key => key.startsWith('componentCache_'));
+      const allPageNames = new Set<string>();
+
+      for (const cacheKey of cacheKeys) {
+        try {
+          const entry = await figma.clientStorage.getAsync(cacheKey) as PersistentCacheEntry | null;
+          if (entry?.pageNames) {
+            entry.pageNames.forEach(name => allPageNames.add(name));
+          }
+        } catch {
+          // Skip errors
+        }
+      }
+
+      return Array.from(allPageNames);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  /**
    * Scan all components with optimization options
    * Uses chunked processing to prevent UI freezes
    */
@@ -117,7 +313,7 @@ export class FigmaComponentServiceOptimized {
     this.errors = [];
     const components: ComponentProperties[] = [];
     let totalInstances = 0;
-    
+
     const {
       tokenType = 'all',
       maxNodesPerPage = 0,
@@ -127,15 +323,52 @@ export class FigmaComponentServiceOptimized {
       includeChildren = true,
       maxDepth = 3,
       useCache = true,
+      usePersistentCache = true,
       pageFilter = []
     } = options;
 
     const pages = figma.root.children.filter(p => p.type === 'PAGE');
-    const pagesToScan = pageFilter.length > 0 
+    const pagesToScan = pageFilter.length > 0
       ? pages.filter(p => pageFilter.includes(p.name))
       : pages;
-    
+
     const totalPages = maxPages > 0 ? Math.min(maxPages, pagesToScan.length) : pagesToScan.length;
+    const pageNames = pagesToScan.slice(0, totalPages).map(p => p.name);
+
+    // Try persistent cache first (cross-session cache)
+    if (usePersistentCache && useCache) {
+      onProgress?.({
+        currentPage: 0,
+        totalPages,
+        currentPageName: 'Checking cache...',
+        componentsFound: 0,
+        nodesScanned: 0,
+        phase: 'loading'
+      });
+
+      const cachedComponents = await this.getFromPersistentCache(tokenType, pageNames);
+      if (cachedComponents) {
+        // Cache hit! Build index and return
+        this.buildTokenIndex(cachedComponents);
+
+        onProgress?.({
+          currentPage: totalPages,
+          totalPages,
+          currentPageName: 'Complete (from cache)',
+          componentsFound: cachedComponents.length,
+          nodesScanned: 0,
+          phase: 'complete'
+        });
+
+        return {
+          components: cachedComponents,
+          totalComponents: cachedComponents.length,
+          totalInstances: 0,
+          pagesScanned: totalPages,
+          errors: []
+        };
+      }
+    }
 
     for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
       const page = pagesToScan[pageIndex];
@@ -197,6 +430,11 @@ export class FigmaComponentServiceOptimized {
 
     // Build index for fast lookups
     this.buildTokenIndex(components);
+
+    // Save to persistent cache for next time
+    if (usePersistentCache && useCache && components.length > 0) {
+      await this.saveToPersistentCache(tokenType, pageNames, components);
+    }
 
     onProgress?.({
       currentPage: totalPages,
