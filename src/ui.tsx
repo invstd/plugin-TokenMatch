@@ -1437,7 +1437,7 @@ function Plugin() {
           /* Information Page */
           <Stack space="medium">
             <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: '13px', fontWeight: '600' }}>Information</Text>
+              <Text style={{ fontSize: '13px', fontWeight: '600' }}>About TokenMatch</Text>
               <button 
                 onClick={() => setCurrentView('main')}
                 style={{
@@ -1459,9 +1459,74 @@ function Plugin() {
               </button>
             </div>
             
-            <div style={{ padding: '16px', backgroundColor: 'var(--figma-color-bg-secondary)', borderRadius: '8px' }}>
-              <Text style={{ fontSize: '12px', color: 'var(--figma-color-text-secondary)' }}>
-                TokenMatch helps you find which components in your Figma file use specific design tokens from your token repository.
+            <div style={{ padding: '12px', backgroundColor: 'var(--figma-color-bg-brand-tertiary)', borderRadius: '6px', border: '1px solid var(--figma-color-border-brand)' }}>
+              <Text style={{ fontSize: '11px', fontWeight: '600', color: 'var(--figma-color-text-brand)' }}>
+                Find which Figma components use your design tokens
+              </Text>
+            </div>
+
+            <Stack space="small">
+              <Text style={{ fontSize: '12px', fontWeight: '600' }}>What It Does</Text>
+              <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', lineHeight: '16px' }}>
+                TokenMatch bridges the gap between your design token repository and your Figma components. 
+                It scans your Figma file and matches component properties (colors, spacing, typography, effects) 
+                against your design tokens stored in GitHub.
+              </Text>
+            </Stack>
+
+            <Stack space="small">
+              <Text style={{ fontSize: '12px', fontWeight: '600' }}>Key Features</Text>
+              <div style={{ paddingLeft: '8px' }}>
+                <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', lineHeight: '16px', display: 'block', marginBottom: '4px' }}>
+                  • Search and filter through all your design tokens
+                </Text>
+                <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', lineHeight: '16px', display: 'block', marginBottom: '4px' }}>
+                  • Match tokens to component properties
+                </Text>
+                <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', lineHeight: '16px', display: 'block', marginBottom: '4px' }}>
+                  • View all variants that use a specific token
+                </Text>
+                <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', lineHeight: '16px', display: 'block', marginBottom: '4px' }}>
+                  • Navigate directly to components
+                </Text>
+                <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', lineHeight: '16px', display: 'block' }}>
+                  • Paste matching components to canvas
+                </Text>
+              </div>
+            </Stack>
+
+            <Stack space="small">
+              <Text style={{ fontSize: '12px', fontWeight: '600' }}>Getting Started</Text>
+              <div style={{ paddingLeft: '8px' }}>
+                <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', lineHeight: '16px', display: 'block', marginBottom: '4px' }}>
+                  <strong>1.</strong> Configure your GitHub repository in settings
+                </Text>
+                <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', lineHeight: '16px', display: 'block', marginBottom: '4px' }}>
+                  <strong>2.</strong> Select a branch to load tokens
+                </Text>
+                <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', lineHeight: '16px', display: 'block', marginBottom: '4px' }}>
+                  <strong>3.</strong> Search and select a token
+                </Text>
+                <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', lineHeight: '16px', display: 'block' }}>
+                  <strong>4.</strong> Click "Match" to find components
+                </Text>
+              </div>
+            </Stack>
+
+            <Stack space="small">
+              <Text style={{ fontSize: '12px', fontWeight: '600' }}>Supported Token Types</Text>
+              <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', lineHeight: '16px' }}>
+                Colors • Spacing • Border radius • Typography • Effects
+              </Text>
+            </Stack>
+
+            <div style={{ padding: '12px', backgroundColor: 'var(--figma-color-bg-secondary)', borderRadius: '6px' }}>
+              <Text style={{ fontSize: '10px', color: 'var(--figma-color-text-tertiary)', lineHeight: '14px' }}>
+                Version {PLUGIN_VERSION} • MIT License
+              </Text>
+              <VerticalSpace space="extraSmall" />
+              <Text style={{ fontSize: '10px', color: 'var(--figma-color-text-tertiary)', lineHeight: '14px' }}>
+                Made with ❤️ for design systems teams
               </Text>
             </div>
           </Stack>
