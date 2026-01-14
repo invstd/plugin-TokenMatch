@@ -21,6 +21,112 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+// Custom scrollbar hook - creates an overlay scrollbar without layout shift
+function useCustomScrollbar(contentRef: React.RefObject<HTMLDivElement>) {
+  const [thumbHeight, setThumbHeight] = useState(0);
+  const [thumbTop, setThumbTop] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [showScrollbar, setShowScrollbar] = useState(false);
+  const dragStartRef = useRef<{ y: number; scrollTop: number } | null>(null);
+
+  // Calculate thumb size and position
+  const updateScrollbar = useCallback(() => {
+    const content = contentRef.current;
+    if (!content) return;
+
+    const { scrollHeight, clientHeight, scrollTop } = content;
+    const hasScroll = scrollHeight > clientHeight;
+    setShowScrollbar(hasScroll);
+
+    if (hasScroll) {
+      const ratio = clientHeight / scrollHeight;
+      const newThumbHeight = Math.max(30, clientHeight * ratio);
+      const maxScrollTop = scrollHeight - clientHeight;
+      const scrollRatio = scrollTop / maxScrollTop;
+      const maxThumbTop = clientHeight - newThumbHeight;
+      
+      setThumbHeight(newThumbHeight);
+      setThumbTop(scrollRatio * maxThumbTop);
+    }
+  }, [contentRef]);
+
+  // Handle scroll events
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+
+    const handleScroll = () => updateScrollbar();
+    content.addEventListener('scroll', handleScroll);
+    
+    // Initial calculation
+    updateScrollbar();
+    
+    // Recalculate on resize
+    const resizeObserver = new ResizeObserver(updateScrollbar);
+    resizeObserver.observe(content);
+
+    return () => {
+      content.removeEventListener('scroll', handleScroll);
+      resizeObserver.disconnect();
+    };
+  }, [contentRef, updateScrollbar]);
+
+  // Handle thumb drag
+  const handleThumbMouseDown = useCallback((e: MouseEvent) => {
+    e.preventDefault();
+    const content = contentRef.current;
+    if (!content) return;
+
+    setIsDragging(true);
+    dragStartRef.current = { y: e.clientY, scrollTop: content.scrollTop };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!dragStartRef.current || !contentRef.current) return;
+      
+      const deltaY = moveEvent.clientY - dragStartRef.current.y;
+      const content = contentRef.current;
+      const { scrollHeight, clientHeight } = content;
+      const maxScrollTop = scrollHeight - clientHeight;
+      const thumbRange = clientHeight - thumbHeight;
+      const scrollRatio = deltaY / thumbRange;
+      
+      content.scrollTop = dragStartRef.current.scrollTop + (scrollRatio * maxScrollTop);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      dragStartRef.current = null;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [contentRef, thumbHeight]);
+
+  // Handle track click
+  const handleTrackClick = useCallback((e: MouseEvent) => {
+    const content = contentRef.current;
+    if (!content || e.target !== e.currentTarget) return;
+
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const clickY = e.clientY - rect.top;
+    const { scrollHeight, clientHeight } = content;
+    const clickRatio = clickY / clientHeight;
+    
+    content.scrollTop = (scrollHeight - clientHeight) * clickRatio;
+  }, [contentRef]);
+
+  return {
+    thumbHeight,
+    thumbTop,
+    isDragging,
+    showScrollbar,
+    handleThumbMouseDown,
+    handleTrackClick
+  };
+}
+
 // Constants for virtualization
 const VISIBLE_RESULTS_LIMIT = 20; // Show 20 results at a time
 const RESULTS_INCREMENT = 20; // Load 20 more when scrolling
@@ -59,6 +165,10 @@ function Plugin() {
   // Virtualization state for results
   const [visibleResultsCount, setVisibleResultsCount] = useState(VISIBLE_RESULTS_LIMIT);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Custom scrollbar for main content
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const customScrollbar = useCustomScrollbar(mainScrollRef);
   
   // Page filter for selective scanning
   const [pageFilter, setPageFilter] = useState('');
@@ -530,12 +640,15 @@ function Plugin() {
       height: '100vh',
       overflow: 'hidden'
     }}>
-      {/* Scrollable content area */}
-      <div style={{ 
-        flex: 1, 
-        overflowY: 'auto',
-        paddingBottom: '36px' // Space for footer
-      }}>
+      {/* Scrollable content area with custom scrollbar */}
+      <div className="custom-scroll-container" style={{ flex: 1, position: 'relative' }}>
+        <div 
+          ref={mainScrollRef}
+          className="custom-scroll-content"
+          style={{ 
+            paddingBottom: '36px' // Space for footer
+          }}
+        >
         <Container space="medium">
           <Stack space="medium">
         {currentView === 'main' ? (
@@ -571,8 +684,8 @@ function Plugin() {
 
             <Stack space="small">
               <Text>Branch</Text>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 auto', minWidth: '150px' }}>
                   {branches.length > 0 ? (
                     <Dropdown
                       value={branches.includes(selectedBranch || '') ? selectedBranch : null}
@@ -596,7 +709,7 @@ function Plugin() {
                 </div>
                 {isConfigured && (
                   <Button onClick={handleTestConnection} disabled={loading} style={{ flexShrink: 0 }}>
-                    {loading ? (loadingMessage || 'Scanning...') : 'Scan'}
+                    {loading ? 'Scanning...' : 'Scan'}
                   </Button>
                 )}
               </div>
@@ -622,8 +735,8 @@ function Plugin() {
                     left: 0,
                     right: 0,
                     zIndex: 100,
-                    maxHeight: '200px', 
-                    overflowY: 'auto', 
+                    maxHeight: '200px',
+                    overflow: 'overlay' as any,
                     border: '1px solid var(--figma-color-border)',
                     borderRadius: '4px',
                     backgroundColor: 'var(--figma-color-bg)',
@@ -648,11 +761,18 @@ function Plugin() {
                         <div
                           key={i}
                           onClick={() => handleTokenSelect(t)}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                          }}
                           style={{ 
                             padding: '8px', 
                             cursor: 'pointer',
-                            backgroundColor: i === 0 ? 'var(--figma-color-bg-hover)' : 'transparent',
-                            borderBottom: i < Math.min(filteredTokens.length, 50) - 1 ? '1px solid var(--figma-color-border)' : 'none'
+                            backgroundColor: 'transparent',
+                            borderBottom: i < Math.min(filteredTokens.length, 50) - 1 ? '1px solid var(--figma-color-border)' : 'none',
+                            transition: 'background-color 0.1s ease'
                           }}
                         >
                           <div style={{ fontSize: '11px', fontWeight: i === 0 ? 600 : 400, wordBreak: 'break-all', lineHeight: '16px', color: 'var(--figma-color-text)' }}>
@@ -758,9 +878,9 @@ function Plugin() {
             <Button onClick={handleScan} disabled={!canScan || scanning}>
               {scanning 
                 ? (scanProgress !== null 
-                    ? `Scanning... ${scanProgress}%` 
-                    : (loadingMessage || 'Scanning...'))
-                : (canScan ? 'Scan for Token Usage' : 'Scan (select a token first)')}
+                    ? `Matching... ${scanProgress}%` 
+                    : (loadingMessage || 'Matching...'))
+                : (canScan ? 'Match' : 'Match (select a token first)')}
             </Button>
             
             {/* Progress bar during scanning */}
@@ -804,18 +924,20 @@ function Plugin() {
                 marginTop: '16px',
                 marginBottom: '16px'
               }}>
-                {/* Header row */}
+                {/* Header row - responsive layout */}
                 <div style={{ 
                   alignSelf: 'stretch', 
                   display: 'flex',
+                  flexWrap: 'wrap',
                   justifyContent: 'space-between', 
-                  alignItems: 'center'
+                  alignItems: 'center',
+                  gap: '8px'
                 }}>
                   <span style={{ color: 'var(--figma-color-text)', fontSize: '12px', fontWeight: 700 }}>
                     Results
                   </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ color: 'var(--figma-color-text-secondary)', fontSize: '11px', fontWeight: 500 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ color: 'var(--figma-color-text-secondary)', fontSize: '11px', fontWeight: 500, whiteSpace: 'nowrap' }}>
                       {matchingResults.totalMatches} match{matchingResults.totalMatches !== 1 ? 'es' : ''} in {matchingResults.totalComponentsScanned} component{matchingResults.totalComponentsScanned !== 1 ? 's' : ''}
                     </span>
                     {matchingResults.matchingComponents.length > 0 && (
@@ -1369,7 +1491,25 @@ function Plugin() {
         </div>
       )}
       </Container>
-    </div>
+        </div>
+        {/* Custom scrollbar track and thumb */}
+        {customScrollbar.showScrollbar && (
+          <div 
+            className={`custom-scrollbar-track ${customScrollbar.isDragging ? 'dragging' : ''}`}
+            onClick={customScrollbar.handleTrackClick as any}
+            style={{ opacity: 1 }}
+          >
+            <div 
+              className={`custom-scrollbar-thumb ${customScrollbar.isDragging ? 'dragging' : ''}`}
+              style={{ 
+                height: `${customScrollbar.thumbHeight}px`,
+                top: `${customScrollbar.thumbTop}px`
+              }}
+              onMouseDown={customScrollbar.handleThumbMouseDown as any}
+            />
+          </div>
+        )}
+      </div>
 
     {/* Fixed Footer */}
     <div style={{

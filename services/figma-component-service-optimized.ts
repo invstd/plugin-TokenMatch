@@ -90,11 +90,22 @@ export class FigmaComponentServiceOptimized {
     byValue: new Map()
   };
   
+  // OPTIMIZATION: Cache token refs per node to avoid repeated lookups
+  private nodeTokenRefsCache = new WeakMap<SceneNode, Map<string, string>>();
+  
   // Tokens Studio plugin namespace
   private readonly TOKENS_STUDIO_NAMESPACE = 'tokens';
   
   // Debug logging - OFF by default for performance
   private debugLogging = false;
+  
+  // OPTIMIZATION: Node types that never contain component definitions
+  private readonly SKIP_NODE_TYPES = new Set([
+    'VECTOR', 'BOOLEAN_OPERATION', 'LINE', 'ELLIPSE', 
+    'STAR', 'POLYGON', 'TEXT', 'RECTANGLE', 'SLICE',
+    'STAMP', 'STICKY', 'SHAPE_WITH_TEXT', 'CODE_BLOCK',
+    'WIDGET', 'EMBED', 'LINK_UNFURL', 'MEDIA'
+  ]);
 
   /**
    * Enable/disable debug logging
@@ -109,6 +120,7 @@ export class FigmaComponentServiceOptimized {
   async clearCache(): Promise<void> {
     this.cache.clear();
     this.tokenIndex = { byPath: new Map(), byValue: new Map() };
+    this.nodeTokenRefsCache = new WeakMap(); // OPTIMIZATION: Clear token refs cache
 
     // Clear persistent cache
     try {
@@ -455,7 +467,8 @@ export class FigmaComponentServiceOptimized {
   }
 
   /**
-   * Scan a single page with chunked processing
+   * OPTIMIZED: Scan a single page with chunked processing
+   * Uses quick page check and batched token ref reads
    */
   private async scanPageChunked(
     page: PageNode,
@@ -470,19 +483,41 @@ export class FigmaComponentServiceOptimized {
     let totalInstances = 0;
     let nodesScanned = 0;
 
+    // OPTIMIZATION: Quick check for empty/non-component pages
+    if (page.children.length === 0) {
+      return { components: [], totalInstances: 0 };
+    }
+    
+    // OPTIMIZATION: Quick sample check - if no components in sample, do a lighter scan
+    const likelyHasComponents = this.pageHasComponents(page);
+
     // Use a more efficient traversal with early exit
     const componentsToProcess: SceneNode[] = [];
     
     // First pass: collect component nodes (fast)
-    this.collectComponentNodes(page, componentsToProcess, maxNodes);
+    // If quick check found components, do full collection; otherwise use a smaller limit
+    const effectiveMaxNodes = likelyHasComponents ? maxNodes : (maxNodes > 0 ? Math.min(maxNodes, 50) : 50);
+    this.collectComponentNodes(page, componentsToProcess, effectiveMaxNodes);
+    
+    // If we hit the limit on a "likely no components" page but found some, do full scan
+    if (!likelyHasComponents && componentsToProcess.length >= effectiveMaxNodes) {
+      componentsToProcess.length = 0; // Clear
+      this.collectComponentNodes(page, componentsToProcess, maxNodes);
+    }
+    
+    // OPTIMIZATION: Clear token refs cache before processing new page
+    // WeakMap will handle cleanup, but this helps with memory for large pages
+    this.nodeTokenRefsCache = new WeakMap();
     
     // Process in chunks
-    for (let i = 0; i < componentsToProcess.length; i += chunkSize) {
-      const chunk = componentsToProcess.slice(i, i + chunkSize);
+    const totalToProcess = componentsToProcess.length;
+    for (let i = 0; i < totalToProcess; i += chunkSize) {
+      const chunkEnd = Math.min(i + chunkSize, totalToProcess);
       
-      for (const node of chunk) {
+      for (let j = i; j < chunkEnd; j++) {
+        const node = componentsToProcess[j];
         try {
-          const props = this.extractComponentPropertiesOptimized(
+          const props = await this.extractComponentPropertiesOptimized(
             node,
             page.name,
             tokenType,
@@ -504,54 +539,126 @@ export class FigmaComponentServiceOptimized {
         }
       }
       
-      // Yield between chunks
-      if (i + chunkSize < componentsToProcess.length) {
+      // Yield between chunks to keep UI responsive
+      if (chunkEnd < totalToProcess) {
         await this.yieldToMain();
       }
     }
-
-    // Count instances (optional, can be expensive for large files)
-    // totalInstances = page.findAll(node => node.type === 'INSTANCE').length;
 
     return { components, totalInstances };
   }
 
   /**
-   * Efficiently collect component nodes without full tree traversal
+   * OPTIMIZED: Efficiently collect component nodes without full tree traversal
+   * Uses early exit patterns and skips branches that can't contain components
    */
   private collectComponentNodes(
     parent: BaseNode & ChildrenMixin,
     result: SceneNode[],
-    maxNodes: number
+    maxNodes: number,
+    depth: number = 0
   ): void {
+    // Early exit conditions
     if (maxNodes > 0 && result.length >= maxNodes) return;
+    if (depth > 15) return; // Prevent excessive depth
 
-    for (const child of parent.children) {
+    const children = parent.children;
+    const childCount = children.length;
+    
+    for (let i = 0; i < childCount; i++) {
       if (maxNodes > 0 && result.length >= maxNodes) break;
+      
+      const child = children[i];
+      const type = child.type;
 
-      if (child.type === 'COMPONENT' || child.type === 'COMPONENT_SET') {
+      // FAST PATH: Direct component matches - most important case
+      if (type === 'COMPONENT' || type === 'COMPONENT_SET') {
         result.push(child);
+        // Don't recurse into components - children extracted separately during property extraction
+        continue;
       }
       
-      // Only recurse into container nodes, skip deep nesting
-      if ('children' in child && (child.type === 'FRAME' || child.type === 'GROUP' || child.type === 'SECTION')) {
-        this.collectComponentNodes(child, result, maxNodes);
+      // OPTIMIZATION: Skip node types that never contain component definitions
+      if (this.SKIP_NODE_TYPES.has(type)) {
+        continue;
+      }
+      
+      // OPTIMIZATION: Skip instances - components inside instances are not definitions
+      if (type === 'INSTANCE') {
+        continue;
+      }
+      
+      // OPTIMIZATION: Skip invisible nodes (unless they're groups which might still contain visible children)
+      if (type !== 'GROUP' && 'visible' in child && !child.visible) {
+        continue;
+      }
+      
+      // Only recurse into container types that commonly hold component definitions
+      if ('children' in child) {
+        const containerChild = child as BaseNode & ChildrenMixin;
+        // OPTIMIZATION: Skip empty containers
+        if (containerChild.children.length === 0) {
+          continue;
+        }
+        
+        // Recurse into frames, groups, sections (component containers)
+        if (type === 'FRAME' || type === 'GROUP' || type === 'SECTION') {
+          this.collectComponentNodes(containerChild, result, maxNodes, depth + 1);
+        }
       }
     }
+  }
+  
+  /**
+   * OPTIMIZATION: Quick check if a page likely has components
+   * Much faster than full traversal for empty/non-component pages
+   */
+  private pageHasComponents(page: PageNode): boolean {
+    const children = page.children;
+    if (children.length === 0) return false;
+    
+    // Quick sample of top-level items
+    const sampleSize = Math.min(children.length, 30);
+    
+    for (let i = 0; i < sampleSize; i++) {
+      const child = children[i];
+      const type = child.type;
+      
+      // Direct component at top level
+      if (type === 'COMPONENT' || type === 'COMPONENT_SET') {
+        return true;
+      }
+      
+      // Quick check one level deep in frames/sections
+      if ((type === 'FRAME' || type === 'SECTION') && 'children' in child) {
+        const frameChildren = (child as FrameNode | SectionNode).children;
+        const checkCount = Math.min(frameChildren.length, 15);
+        
+        for (let j = 0; j < checkCount; j++) {
+          const grandchild = frameChildren[j];
+          if (grandchild.type === 'COMPONENT' || grandchild.type === 'COMPONENT_SET') {
+            return true;
+          }
+        }
+      }
+    }
+    
+    // No components found in sample - could still have some, but run lighter scan
+    return false;
   }
 
   /**
    * Extract component properties with token type filtering
    * Only extracts properties relevant to the specified token type
    */
-  private extractComponentPropertiesOptimized(
+  private async extractComponentPropertiesOptimized(
     node: SceneNode,
     pageName: string,
     tokenType: string,
     includeChildren: boolean,
     maxDepth: number,
     currentDepth: number
-  ): ComponentProperties | null {
+  ): Promise<ComponentProperties | null> {
     if (
       node.type !== 'COMPONENT' &&
       node.type !== 'COMPONENT_SET' &&
@@ -587,6 +694,7 @@ export class FigmaComponentServiceOptimized {
       if (component.parent?.type === 'COMPONENT_SET') {
         properties.mainComponentName = component.parent.name;
         properties.mainComponentId = component.parent.id;
+        properties.variantName = component.name;  // "State=Active, Size=Large"
       } else {
         // Standalone component (not a variant)
         properties.mainComponentName = node.name;
@@ -595,19 +703,39 @@ export class FigmaComponentServiceOptimized {
     } else if (node.type === 'INSTANCE') {
       const instance = node as InstanceNode;
       try {
-        const mainComp = instance.mainComponent;
+        // Use async method to ensure we get the mainComponent even for nested instances
+        const mainComp = await instance.getMainComponentAsync();
         if (mainComp) {
           if (mainComp.parent?.type === 'COMPONENT_SET') {
             properties.mainComponentName = mainComp.parent.name;
             properties.mainComponentId = mainComp.parent.id;
+            properties.variantName = mainComp.name;  // Capture from main component
           } else {
             properties.mainComponentName = mainComp.name;
             properties.mainComponentId = mainComp.id;
           }
         }
       } catch {
-        // mainComponent might not be available synchronously
-        properties.mainComponentName = node.name.split(',')[0].trim();
+        // If async fails, try synchronous fallback
+        try {
+          const mainComp = instance.mainComponent;
+          if (mainComp) {
+            if (mainComp.parent?.type === 'COMPONENT_SET') {
+              properties.mainComponentName = mainComp.parent.name;
+              properties.mainComponentId = mainComp.parent.id;
+              properties.variantName = mainComp.name;
+            } else {
+              properties.mainComponentName = mainComp.name;
+              properties.mainComponentId = mainComp.id;
+            }
+          } else {
+            // Last resort: use instance name
+            properties.mainComponentName = node.name.split(',')[0].trim();
+          }
+        } catch {
+          // mainComponent not available at all
+          properties.mainComponentName = node.name.split(',')[0].trim();
+        }
       }
     }
 
@@ -656,7 +784,7 @@ export class FigmaComponentServiceOptimized {
         // Skip children that won't have relevant token data
         if (this.shouldSkipNode(child, tokenType)) continue;
 
-        const childProps = this.extractComponentPropertiesOptimized(
+        const childProps = await this.extractComponentPropertiesOptimized(
           child,
           pageName,
           tokenType,
@@ -968,67 +1096,94 @@ export class FigmaComponentServiceOptimized {
   }
 
   // ========================================
-  // FAST TOKEN REFERENCE EXTRACTION
-  // Reduced namespace checks, single-pass
+  // OPTIMIZED TOKEN REFERENCE EXTRACTION
+  // Batch read all keys once per node, cache results
   // ========================================
 
+  /**
+   * OPTIMIZATION: Get all token references for a node in one pass
+   * Caches results to avoid repeated lookups
+   */
+  private getNodeTokenRefs(node: SceneNode): Map<string, string> {
+    // Check cache first
+    let refs = this.nodeTokenRefsCache.get(node);
+    if (refs) return refs;
+    
+    refs = new Map<string, string>();
+    
+    try {
+      // Batch read all keys from 'tokens' namespace in one call
+      const keys = node.getSharedPluginDataKeys('tokens');
+      for (const key of keys) {
+        const value = node.getSharedPluginData('tokens', key);
+        if (value && value.trim()) {
+          refs.set(key, this.cleanTokenReference(value));
+        }
+      }
+    } catch {
+      // Namespace doesn't exist - that's fine
+    }
+    
+    // Cache for future lookups on this node
+    this.nodeTokenRefsCache.set(node, refs);
+    return refs;
+  }
+
   private getFillTokenReferencesFast(node: SceneNode, index: number): string | undefined {
-    // Try most common keys first
-    return this.getSharedDataFast(node, 'fill') ||
-           this.getSharedDataFast(node, `fills.${index}`) ||
-           this.getSharedDataFast(node, 'fillColor') ||
+    const refs = this.getNodeTokenRefs(node);
+    // Check keys in priority order
+    return refs.get('fill') ||
+           refs.get(`fills.${index}`) ||
+           refs.get(`fills[${index}]`) ||
+           refs.get('fillColor') ||
            this.getVariableBindingFast(node, 'fills');
   }
 
   private getStrokeTokenReferencesFast(node: SceneNode, index: number): string | undefined {
-    return this.getSharedDataFast(node, 'stroke') ||
-           this.getSharedDataFast(node, `strokes.${index}`) ||
-           this.getSharedDataFast(node, 'strokeColor') ||
+    const refs = this.getNodeTokenRefs(node);
+    return refs.get('stroke') ||
+           refs.get(`strokes.${index}`) ||
+           refs.get(`strokes[${index}]`) ||
+           refs.get('strokeColor') ||
            this.getVariableBindingFast(node, 'strokes');
   }
 
   private getTypographyTokenFast(node: SceneNode): string | undefined {
-    return this.getSharedDataFast(node, 'typography') ||
-           this.getSharedDataFast(node, 'fontFamily') ||
-           this.getSharedDataFast(node, 'fontSize');
+    const refs = this.getNodeTokenRefs(node);
+    return refs.get('typography') ||
+           refs.get('fontFamily') ||
+           refs.get('fontSize') ||
+           refs.get('fontWeight');
   }
 
   private getSpacingTokenFast(node: SceneNode, property: string): string | undefined {
-    return this.getSharedDataFast(node, property) ||
+    const refs = this.getNodeTokenRefs(node);
+    return refs.get(property) ||
            this.getVariableBindingFast(node, property);
   }
 
   private getBorderRadiusTokenFast(node: SceneNode): string | undefined {
-    return this.getSharedDataFast(node, 'borderRadius') ||
-           this.getSharedDataFast(node, 'cornerRadius') ||
+    const refs = this.getNodeTokenRefs(node);
+    return refs.get('borderRadius') ||
+           refs.get('cornerRadius') ||
+           refs.get('radius') ||
            this.getVariableBindingFast(node, 'cornerRadius');
   }
 
   private getBorderWidthTokenFast(node: SceneNode): string | undefined {
-    return this.getSharedDataFast(node, 'borderWidth') ||
-           this.getSharedDataFast(node, 'strokeWeight') ||
+    const refs = this.getNodeTokenRefs(node);
+    return refs.get('borderWidth') ||
+           refs.get('strokeWeight') ||
            this.getVariableBindingFast(node, 'strokeWeight');
   }
 
   private getEffectTokenFast(node: SceneNode, index: number): string | undefined {
-    return this.getSharedDataFast(node, 'boxShadow') ||
-           this.getSharedDataFast(node, `effects.${index}`) ||
+    const refs = this.getNodeTokenRefs(node);
+    return refs.get('boxShadow') ||
+           refs.get(`effects.${index}`) ||
+           refs.get(`effects[${index}]`) ||
+           refs.get('shadow') ||
            this.getVariableBindingFast(node, 'effects');
-  }
-
-  /**
-   * Fast shared plugin data lookup - only check 'tokens' namespace
-   */
-  private getSharedDataFast(node: SceneNode, key: string): string | undefined {
-    try {
-      const value = node.getSharedPluginData('tokens', key);
-      if (value && value.trim()) {
-        return this.cleanTokenReference(value);
-      }
-    } catch {
-      // Ignore errors
-    }
-    return undefined;
   }
 
   /**
@@ -1223,8 +1378,8 @@ export class FigmaComponentServiceOptimized {
   /**
    * Scan all components (original API, uses optimized implementation)
    */
-  scanAllComponents(): ScanResult {
-    // Synchronous wrapper for compatibility
+  async scanAllComponents(): Promise<ScanResult> {
+    // Async wrapper for compatibility
     // For best performance, use scanAllComponentsOptimized() directly
     this.errors = [];
     const components: ComponentProperties[] = [];
@@ -1239,7 +1394,7 @@ export class FigmaComponentServiceOptimized {
 
         for (const component of pageComponents) {
           try {
-            const props = this.extractComponentPropertiesOptimized(
+            const props = await this.extractComponentPropertiesOptimized(
               component, page.name, 'all', true, 3, 0
             );
             if (props) components.push(props);
@@ -1267,7 +1422,7 @@ export class FigmaComponentServiceOptimized {
    * Scan components on specific pages only (by page name)
    * This is much faster than scanning all pages when you know which pages to scan
    */
-  scanFilteredPages(pageNames: string[]): ScanResult {
+  async scanFilteredPages(pageNames: string[]): Promise<ScanResult> {
     this.errors = [];
     const components: ComponentProperties[] = [];
     let totalInstances = 0;
@@ -1290,7 +1445,7 @@ export class FigmaComponentServiceOptimized {
 
         for (const component of pageComponents) {
           try {
-            const props = this.extractComponentPropertiesOptimized(
+            const props = await this.extractComponentPropertiesOptimized(
               component, page.name, 'all', true, 3, 0
             );
             if (props) components.push(props);
@@ -1317,7 +1472,7 @@ export class FigmaComponentServiceOptimized {
   /**
    * Scan current page only
    */
-  scanCurrentPage(): ScanResult {
+  async scanCurrentPage(): Promise<ScanResult> {
     this.errors = [];
     const components: ComponentProperties[] = [];
     const currentPage = figma.currentPage;
@@ -1328,7 +1483,7 @@ export class FigmaComponentServiceOptimized {
 
     for (const component of pageComponents) {
       try {
-        const props = this.extractComponentPropertiesOptimized(
+        const props = await this.extractComponentPropertiesOptimized(
           component, currentPage.name, 'all', true, 3, 0
         );
         if (props) components.push(props);
@@ -1353,7 +1508,7 @@ export class FigmaComponentServiceOptimized {
   /**
    * Scan selected nodes
    */
-  scanNodes(nodes: readonly SceneNode[]): ScanResult {
+  async scanNodes(nodes: readonly SceneNode[]): Promise<ScanResult> {
     this.errors = [];
     const components: ComponentProperties[] = [];
     const currentPage = figma.currentPage;
@@ -1366,7 +1521,7 @@ export class FigmaComponentServiceOptimized {
 
         for (const component of nodeComponents) {
           try {
-            const props = this.extractComponentPropertiesOptimized(
+            const props = await this.extractComponentPropertiesOptimized(
               component, currentPage.name, 'all', true, 3, 0
             );
             if (props) components.push(props);
@@ -1382,7 +1537,7 @@ export class FigmaComponentServiceOptimized {
 
       if (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET') {
         try {
-          const props = this.extractComponentPropertiesOptimized(
+          const props = await this.extractComponentPropertiesOptimized(
             node, currentPage.name, 'all', true, 3, 0
           );
           if (props && !components.find(c => c.id === props.id)) {

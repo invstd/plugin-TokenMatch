@@ -19,6 +19,7 @@ export interface MatchDetail {
   matchedValue: string;
   tokenValue: string;
   confidence: number; // 0-1, where 1 is exact match
+  nestedMainComponentId?: string;  // NEW: mainComponentId of nested component
 }
 
 export interface ComponentMatch {
@@ -121,6 +122,16 @@ export class TokenMatchingService {
           matchDetails.push(...this.matchEffects(token, component));
         }
     }
+    
+    // Set nestedMainComponentId for direct matches found on this component
+    // This marks which component actually has the token
+    if (matchDetails.length > 0 && component.mainComponentId) {
+      matchDetails.forEach(detail => {
+        if (!detail.nestedMainComponentId) {
+          detail.nestedMainComponentId = component.mainComponentId;
+        }
+      });
+    }
 
     // Recursively check children
     if (component.children && component.children.length > 0) {
@@ -131,6 +142,7 @@ export class TokenMatchingService {
           matchDetails.push({
             ...match,
             property: `${child.name} → ${match.property}`
+            // Keep the nestedMainComponentId from the child match (already set above)
           });
         }
       }

@@ -765,8 +765,8 @@ on('scan-components', async (msg: { scanAll?: boolean }) => {
     }
 
     const result = scanAll
-      ? figmaComponentService.scanAllComponents()
-      : figmaComponentService.scanCurrentPage();
+      ? await figmaComponentService.scanAllComponents()
+      : await figmaComponentService.scanCurrentPage();
 
     emit('scan-result', {
       success: true,
@@ -854,9 +854,9 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
       
       if (scanAllPages) {
         if (hasPageFilter) {
-          scanResult = figmaComponentService.scanFilteredPages(pageFilter!);
+          scanResult = await figmaComponentService.scanFilteredPages(pageFilter!);
         } else {
-          scanResult = figmaComponentService.scanAllComponents();
+          scanResult = await figmaComponentService.scanAllComponents();
         }
       } else if (scanSelected) {
         const selection = figma.currentPage.selection;
@@ -867,9 +867,9 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
           });
           return;
         }
-        scanResult = figmaComponentService.scanNodes(selection);
+        scanResult = await figmaComponentService.scanNodes(selection);
       } else {
-        scanResult = figmaComponentService.scanCurrentPage();
+        scanResult = await figmaComponentService.scanCurrentPage();
       }
     }
 
@@ -882,50 +882,56 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
 
     // Filter out components that only match because they contain other matched components
     // For example: if KdsButton has a direct match, don't show KdsCard that only matches via nested KdsButton
-    // ONLY filter based on mainComponentName to avoid false positives
-    const directMatchMainNames = new Set<string>();
+    // NEW ALGORITHM: Use mainComponentId for reliable deduplication
     
-    // First pass: identify mainComponentNames that have direct matches (not on nested children)
-    for (const match of matchingResult.matchingComponents) {
-      const hasDirectMatch = match.matches.some(m => !m.property.includes(' → '));
-      if (hasDirectMatch && match.component.mainComponentName) {
-        // Only add mainComponentName (the component set name like "KdsButton")
-        directMatchMainNames.add(match.component.mainComponentName.toLowerCase().trim());
-      }
-    }
-    
-    // Helper function to extract the LAST component name before the property type
-    // Path format: "KdsDesktopAppHeader → right → KdsAvatar → fill color (token ref)"
-    // We want to extract "KdsAvatar" (the component that actually has the token)
-    const extractNestedComponentName = (property: string): string | null => {
-      const parts = property.split(' → ');
-      // Need at least 2 parts: component name + property type
-      if (parts.length < 2) return null;
+    // Helper: Check if a property is a direct match (not nested in another component)
+    // Direct matches:
+    //   - "fill color" (no arrow)
+    //   - "Variant=Active → fill color" (one arrow, variant to property)
+    // Nested matches:
+    //   - "ParentFrame → ChildComponent → fill color" (arrows through component layers)
+    //   - "Count=1 → AvatarGroup → KdsAvatar → fill color" (variant with nested components)
+    const isDirectMatch = (property: string): boolean => {
+      if (!property.includes(' → ')) return true; // No arrow means direct
       
-      // The second-to-last part is the component name (last part is property type)
-      return parts[parts.length - 2].toLowerCase().trim();
+      const parts = property.split(' → ');
+      
+      // If only 1 arrow and first part has = (variant syntax), it's direct
+      // E.g., "Variant=Active → fill color"
+      if (parts.length === 2 && parts[0].includes('=')) {
+        return true;
+      }
+      
+      // If multiple arrows, it's nested through component layers
+      // E.g., "Count=1 → AvatarGroup → KdsAvatar → fill color"
+      if (parts.length > 2) {
+        return false;
+      }
+      
+      // Single arrow without = in first part is also nested
+      // E.g., "FrameName → fill color"
+      return false;
     };
     
-    // Second pass: filter out components that only have nested matches to already-matched components
+    // Build map of mainComponentIds with direct matches
+    const directMatchIds = new Set<string>();
+    for (const match of matchingResult.matchingComponents) {
+      const hasDirectMatch = match.matches.some(m => isDirectMatch(m.property));
+      if (hasDirectMatch && match.component.mainComponentId) {
+        directMatchIds.add(match.component.mainComponentId);
+      }
+    }
+
+    // Filter out containers that only match via already-matched nested components
     const filteredComponents = matchingResult.matchingComponents.filter(match => {
-      // If this component has any direct matches, always keep it
-      const hasDirectMatch = match.matches.some(m => !m.property.includes(' → '));
+      const hasDirectMatch = match.matches.some(m => isDirectMatch(m.property));
       if (hasDirectMatch) return true;
-      
-      // Check if all nested matches point to components that are already direct matches
-      const allNestedMatchesAreDuplicates = match.matches.every(m => {
-        if (!m.property.includes(' → ')) return false; // Not a nested match
-        
-        // Extract the nested component name (the one right before the property)
-        const nestedName = extractNestedComponentName(m.property);
-        if (!nestedName) return false;
-        
-        // Check if this nested component is already a direct match by mainComponentName
-        return directMatchMainNames.has(nestedName);
+
+      // Keep if any nested match points to a component NOT in directMatchIds
+      return match.matches.some(m => {
+        if (isDirectMatch(m.property)) return false; // Not a nested match
+        return !m.nestedMainComponentId || !directMatchIds.has(m.nestedMainComponentId);
       });
-      
-      // Exclude only if ALL matches are duplicates of other results
-      return !allNestedMatchesAreDuplicates;
     });
     
     emit('scan-progress', { message: 'Matching complete!' });
@@ -945,6 +951,7 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
         type: match.component.type,
         mainComponentName: match.component.mainComponentName,
         mainComponentId: match.component.mainComponentId,
+        variantName: match.component.variantName,  // NEW
         matches: match.matches.map(m => `${m.property}: ${m.matchedValue}`),
         matchDetails: match.matches,
         confidence: match.confidence
@@ -1039,6 +1046,7 @@ interface MatchingComponent {
   type: string;
   mainComponentName?: string;
   mainComponentId?: string;
+  variantName?: string;  // NEW
   matches: string[];
   matchDetails: Array<{
     property: string;
@@ -1224,121 +1232,128 @@ on('create-component-collection', async (msg: ComponentCollectionRequest) => {
         instancesContainer.layoutWrap = 'WRAP';
         instancesContainer.primaryAxisSizingMode = 'AUTO';
         instancesContainer.counterAxisSizingMode = 'AUTO';
-        // Safety padding of 40px to catch absolute positioned elements
-        instancesContainer.paddingTop = 40;
-        instancesContainer.paddingBottom = 40;
-        instancesContainer.paddingLeft = 40;
-        instancesContainer.paddingRight = 40;
-        instancesContainer.itemSpacing = 12;
-        instancesContainer.counterAxisSpacing = 12;
+        // Safety padding of 60px to catch absolute positioned elements (was 40)
+        instancesContainer.paddingTop = 60;
+        instancesContainer.paddingBottom = 60;
+        instancesContainer.paddingLeft = 60;
+        instancesContainer.paddingRight = 60;
+        instancesContainer.itemSpacing = 20;  // Was 12
+        instancesContainer.counterAxisSpacing = 20;  // Was 12
         instancesContainer.fills = [];
         // Don't clip content to catch absolute positioned elements
         instancesContainer.clipsContent = false;
         cardFrame.appendChild(instancesContainer);
 
         // Create instances for each matched variant
-        // We try to find the exact variant component that was matched
+        // For COMPONENT_SET nodes, we need to create instances for ALL variants that have matches
+        // (not just the first one we find)
         let instancesCreated = 0;
-        const processedVariantNames = new Set<string>(); // Avoid duplicate variants
+        const processedVariantNames = new Set<string>(); // Avoid exact duplicates
         
+        // Collect all unique variant names from the match details of all variants in this group
+        const variantNamesToCreate = new Set<string>();
         for (const variant of variants) {
-          try {
-            const node = await figma.getNodeByIdAsync(variant.id);
-            if (!node) continue;
-            
-            let nodeToAdd: SceneNode | null = null;
-            let variantIdentifier = variant.name; // Used for deduplication
-            
-            if (node.type === 'INSTANCE') {
-              // Clone the instance to preserve its exact variant properties
-              const instance = node as InstanceNode;
-              // Get the variant identifier from the instance's main component name
-              try {
-                const mainComp = await instance.getMainComponentAsync();
-                if (mainComp) {
-                  variantIdentifier = mainComp.name;
-                }
-              } catch {}
-              
-              // Skip if we've already added this variant
-              if (processedVariantNames.has(variantIdentifier)) continue;
-              processedVariantNames.add(variantIdentifier);
-              
-              nodeToAdd = instance.clone();
-            } else if (node.type === 'COMPONENT') {
-              // This is the variant component itself - create instance from it
-              const component = node as ComponentNode;
-              variantIdentifier = component.name;
-              
-              // Skip if we've already added this variant
-              if (processedVariantNames.has(variantIdentifier)) continue;
-              processedVariantNames.add(variantIdentifier);
-              
-              nodeToAdd = component.createInstance();
-            } else if (node.type === 'COMPONENT_SET') {
-              // For component sets, try to find the specific variant that was matched
-              const componentSet = node as ComponentSetNode;
-              
-              // Try to match by variant name from the scan result
-              // The variant.name might contain variant properties like "State=Editing"
-              let targetVariant: ComponentNode | null = null;
-              
-              // If the variant name contains "=", it might be a variant specifier
-              if (variant.name.includes('=')) {
-                for (const child of componentSet.children) {
-                  if (child.type === 'COMPONENT' && child.name === variant.name) {
-                    targetVariant = child as ComponentNode;
-                    break;
-                  }
-                }
+          // Extract variant names from match details
+          if (variant.matchDetails && variant.matchDetails.length > 0) {
+            for (const detail of variant.matchDetails) {
+              const parts = detail.property.split(' → ');
+              if (parts.length > 0 && parts[0].includes('=')) {
+                variantNamesToCreate.add(parts[0].trim());
               }
+            }
+          }
+          // Also include direct variantName if present
+          if (variant.variantName) {
+            variantNamesToCreate.add(variant.variantName);
+          }
+        }
+        
+        // Now get the component set node (use first variant's ID)
+        const firstVariantInGroup = variants[0];
+        if (!firstVariantInGroup) continue;
+        
+        try {
+          const node = await figma.getNodeByIdAsync(firstVariantInGroup.id);
+          if (!node) continue;
+          
+          // Handle different node types
+          if (node.type === 'COMPONENT_SET') {
+            const componentSet = node as ComponentSetNode;
+            
+            // Create instances for each variant name we found
+            for (const variantName of Array.from(variantNamesToCreate)) {
+              if (processedVariantNames.has(variantName)) continue;
+              processedVariantNames.add(variantName);
               
-              // Fall back to default variant
-              if (!targetVariant) {
-                const defaultVariant = componentSet.defaultVariant || componentSet.children[0];
-                if (defaultVariant?.type === 'COMPONENT') {
-                  targetVariant = defaultVariant as ComponentNode;
+              // Find the matching variant component
+              let targetVariant: ComponentNode | null = null;
+              for (const child of componentSet.children) {
+                if (child.type === 'COMPONENT' && child.name === variantName) {
+                  targetVariant = child as ComponentNode;
+                  break;
                 }
               }
               
               if (targetVariant) {
-                variantIdentifier = targetVariant.name;
+                const instance = targetVariant.createInstance();
                 
-                // Skip if we've already added this variant
-                if (processedVariantNames.has(variantIdentifier)) continue;
-                processedVariantNames.add(variantIdentifier);
-                
-                nodeToAdd = targetVariant.createInstance();
+                // Don't resize - let components use their natural size (hug content)
+                instancesContainer.appendChild(instance);
+                instancesCreated++;
               }
-            } else if (node.type === 'FRAME' || node.type === 'GROUP' || node.type === 'RECTANGLE' || 
-                       node.type === 'ELLIPSE' || node.type === 'LINE' || node.type === 'TEXT' ||
-                       node.type === 'VECTOR' || node.type === 'POLYGON' || node.type === 'STAR') {
-              // For other clonable nodes, clone them
-              // Skip duplicates
-              if (processedVariantNames.has(variantIdentifier)) continue;
-              processedVariantNames.add(variantIdentifier);
-              
-              nodeToAdd = (node as FrameNode | GroupNode | RectangleNode | EllipseNode | LineNode | TextNode | VectorNode | PolygonNode | StarNode).clone();
             }
-            
-            if (nodeToAdd) {
-              // Scale down if too large
-              const maxSize = 150;
-              if ('width' in nodeToAdd && 'height' in nodeToAdd) {
-                const currentWidth = (nodeToAdd as any).width;
-                const currentHeight = (nodeToAdd as any).height;
-                const scale = Math.min(1, maxSize / Math.max(currentWidth, currentHeight));
-                if (scale < 1 && 'resize' in nodeToAdd) {
-                  (nodeToAdd as any).resize(currentWidth * scale, currentHeight * scale);
+          } else {
+            // For non-COMPONENT_SET nodes, handle each variant individually (old logic)
+            for (const variant of variants) {
+              try {
+                const varNode = await figma.getNodeByIdAsync(variant.id);
+                if (!varNode) continue;
+                
+                let nodeToAdd: SceneNode | null = null;
+                let variantIdentifier = variant.name;
+                
+                if (varNode.type === 'INSTANCE') {
+                  const instance = varNode as InstanceNode;
+                  try {
+                    const mainComp = await instance.getMainComponentAsync();
+                    if (mainComp) {
+                      variantIdentifier = mainComp.name;
+                    }
+                  } catch {}
+                  
+                  if (processedVariantNames.has(variantIdentifier)) continue;
+                  processedVariantNames.add(variantIdentifier);
+                  
+                  nodeToAdd = instance.clone();
+                } else if (varNode.type === 'COMPONENT') {
+                  const component = varNode as ComponentNode;
+                  variantIdentifier = component.name;
+                  
+                  if (processedVariantNames.has(variantIdentifier)) continue;
+                  processedVariantNames.add(variantIdentifier);
+                  
+                  nodeToAdd = component.createInstance();
+                } else if (varNode.type === 'FRAME' || varNode.type === 'GROUP' || varNode.type === 'RECTANGLE' || 
+                           varNode.type === 'ELLIPSE' || varNode.type === 'LINE' || varNode.type === 'TEXT' ||
+                           varNode.type === 'VECTOR' || varNode.type === 'POLYGON' || varNode.type === 'STAR') {
+                  if (processedVariantNames.has(variantIdentifier)) continue;
+                  processedVariantNames.add(variantIdentifier);
+                  
+                  nodeToAdd = (varNode as FrameNode | GroupNode | RectangleNode | EllipseNode | LineNode | TextNode | VectorNode | PolygonNode | StarNode).clone();
                 }
+                
+                if (nodeToAdd) {
+                  // Don't resize - let components use their natural size (hug content)
+                  instancesContainer.appendChild(nodeToAdd);
+                  instancesCreated++;
+                }
+              } catch (error) {
+                console.error(`Failed to create instance for variant ${variant.id}:`, error);
               }
-              
-              instancesContainer.appendChild(nodeToAdd);
-              instancesCreated++;
             }
-          } catch (error) {
-            console.error(`Failed to create instance for variant ${variant.id}:`, error);
           }
+        } catch (error) {
+          console.error(`Failed to process component ${mainName}:`, error);
         }
         
         // Only add the card if we created at least one instance

@@ -1,6 +1,59 @@
 @import "tailwindcss";
 
-/* Minimal scrollbar styling - uses Figma CSS variables for light/dark mode */
+/* Hide native scrollbar for custom scrollbar containers */
+.custom-scroll-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.custom-scroll-content {
+  overflow-y: scroll;
+  height: 100%;
+  /* Hide native scrollbar */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.custom-scroll-content::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Opera */
+}
+
+/* Custom scrollbar track */
+.custom-scrollbar-track {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  background: transparent;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.custom-scroll-container:hover .custom-scrollbar-track,
+.custom-scrollbar-track.dragging {
+  opacity: 1;
+}
+
+/* Custom scrollbar thumb */
+.custom-scrollbar-thumb {
+  position: absolute;
+  right: 0;
+  width: 8px;
+  min-height: 30px;
+  background: var(--figma-color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.custom-scrollbar-thumb:hover,
+.custom-scrollbar-thumb.dragging {
+  background: var(--figma-color-border-strong);
+}
+
+/* Default scrollbar styling for other elements */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -17,12 +70,6 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--figma-color-border-strong);
-}
-
-/* Firefox - fallback to theme-aware colors */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--figma-color-border) transparent;
 }
 
 /* Fix for disabled button text visibility in light mode

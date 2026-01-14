@@ -56,6 +56,7 @@ export interface ComponentProperties {
   pageName: string;
   mainComponentName?: string; // For variants: the parent ComponentSet name (e.g., "KdsButton")
   mainComponentId?: string; // ID of the main component or component set
+  variantName?: string;  // NEW: Actual variant string (e.g., "State=Active, Size=Large")
   colors: ColorProperty[];
   typography: TypographyProperty[];
   spacing: SpacingProperty[];
