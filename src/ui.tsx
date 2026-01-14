@@ -4,6 +4,9 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'preact/hooks'
 import { on, emit } from '@create-figma-plugin/utilities';
 import '!./output.css';
 
+// Import version from package.json
+const PLUGIN_VERSION = '1.0.0';
+
 // Debounce utility for search optimization
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -1543,7 +1546,7 @@ function Plugin() {
           borderRadius: '4px',
           marginRight: '6px'
         }}>
-          <span style={{ fontSize: '10px', color: 'var(--figma-color-text-tertiary)' }}>v0.1.3</span>
+          <span style={{ fontSize: '10px', color: 'var(--figma-color-text-tertiary)' }}>v{PLUGIN_VERSION}</span>
         </div>
       </div>
 
