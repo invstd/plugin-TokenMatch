@@ -317,11 +317,28 @@ on('save-config', async (msg: RepoConfig) => {
       return 'number';
     }
     
-    if (typeof val === 'object' && val !== null) {
-      // Composite tokens
-      if (pathStr.includes('shadow') || val.blur !== undefined || val.spread !== undefined) return 'shadow';
-      if (pathStr.includes('typography') || val.fontFamily !== undefined) return 'typography';
-      if (pathStr.includes('border') || (val.width !== undefined && val.style !== undefined)) return 'border';
+    if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+      // Composite tokens - detect by structure
+      const keys = Object.keys(val).map(k => k.toLowerCase());
+      
+      // Shadow composite: has blur, spread, color, offset
+      if (pathStr.includes('shadow') || pathStr.includes('elevation') ||
+          keys.some(k => ['blur', 'spread', 'offsetx', 'offsety'].includes(k))) {
+        return 'shadow';
+      }
+      
+      // Typography composite: has fontFamily, fontSize, etc.
+      if (pathStr.includes('typography') || 
+          keys.some(k => ['fontfamily', 'fontsize', 'fontweight', 'lineheight'].includes(k))) {
+        return 'typography';
+      }
+      
+      // Border composite: has color + width or style
+      if (pathStr.includes('border') ||
+          (keys.includes('width') && (keys.includes('color') || keys.includes('style'))) ||
+          (keys.includes('color') && keys.includes('style'))) {
+        return 'border';
+      }
     }
     
     return 'string';
@@ -349,10 +366,85 @@ on('save-config', async (msg: RepoConfig) => {
       return true;
     }
     
-    // If value is an object (composite tokens), check for token properties
+    // If value is an object (composite tokens like border, typography, shadow)
     if (typeof value === 'object' && value !== null) {
-      const hasTokenProps = 'type' in obj || 'description' in obj;
-      return hasTokenProps;
+      // Check if parent has explicit token properties (type, description)
+      if ('type' in obj || 'description' in obj) {
+        return true;
+      }
+      
+      // Check if value object looks like a known composite token type:
+      // - Border: has color, width, style
+      // - Typography: has fontFamily, fontSize, fontWeight, lineHeight
+      // - Shadow: has color, x/offsetX, y/offsetY, blur, spread
+      const valueKeys = Object.keys(value);
+      
+      // Border composite token
+      if (valueKeys.some(k => ['color', 'width', 'style'].includes(k.toLowerCase()))) {
+        const borderProps = valueKeys.filter(k => 
+          ['color', 'width', 'style', 'bordercolor', 'borderwidth', 'borderstyle'].includes(k.toLowerCase())
+        );
+        if (borderProps.length >= 2) return true;
+      }
+      
+      // Typography composite token
+      if (valueKeys.some(k => ['fontfamily', 'fontsize', 'fontweight', 'lineheight', 'letterspacing'].includes(k.toLowerCase()))) {
+        return true;
+      }
+      
+      // Shadow composite token
+      if (valueKeys.some(k => ['blur', 'spread', 'offsetx', 'offsety', 'x', 'y'].includes(k.toLowerCase())) &&
+          valueKeys.some(k => k.toLowerCase() === 'color')) {
+        return true;
+      }
+      
+      // If value contains alias references, likely a composite token
+      if (valueKeys.length <= 6 && valueKeys.length >= 2) {
+        const hasAliasValues = valueKeys.some(k => {
+          const v = value[k];
+          return typeof v === 'string' && (v.startsWith('{') || v.startsWith('$'));
+        });
+        if (hasAliasValues) return true;
+      }
+    }
+    
+    return false;
+  };
+
+  /**
+   * Check if an object is an unwrapped composite token (no 'value' wrapper)
+   * This handles typography/border/shadow tokens that are structured as direct objects
+   * e.g., { fontFamily: "...", fontSize: "...", fontWeight: "...", lineHeight: "..." }
+   */
+  const isUnwrappedCompositeToken = (obj: any, path: string[]): boolean => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+    
+    // Don't treat W3C or Token Studio wrapped tokens as unwrapped
+    if ('$value' in obj || 'value' in obj) return false;
+    
+    const keys = Object.keys(obj);
+    const lowercaseKeys = keys.map(k => k.toLowerCase());
+    
+    // Typography composite: has fontFamily, fontSize, fontWeight, or lineHeight
+    const typographyKeys = ['fontfamily', 'fontsize', 'fontweight', 'lineheight', 'letterspacing', 'texttransform', 'textdecoration'];
+    const hasTypographyKeys = lowercaseKeys.filter(k => typographyKeys.includes(k)).length >= 2;
+    if (hasTypographyKeys) {
+      return true;
+    }
+    
+    // Border composite: has color + width or style  
+    const hasBorderKeys = lowercaseKeys.includes('color') && 
+      (lowercaseKeys.includes('width') || lowercaseKeys.includes('style'));
+    if (hasBorderKeys) {
+      return true;
+    }
+    
+    // Shadow composite: has blur/spread + color + offset
+    const hasShadowKeys = lowercaseKeys.some(k => ['blur', 'spread'].includes(k)) &&
+      lowercaseKeys.includes('color') &&
+      (lowercaseKeys.some(k => ['x', 'y', 'offsetx', 'offsety'].includes(k)));
+    if (hasShadowKeys) {
+      return true;
     }
     
     return false;
@@ -394,6 +486,7 @@ on('save-config', async (msg: RepoConfig) => {
       // OPTIMIZATION: Join path once and pass string to inferType
       const pathStr = pathStack.join('.').toLowerCase();
       const t = explicitType || inferType(value, pathStr);
+      
       tokens.push({ 
         name, 
         path: pathStack.slice(), // Create copy only when adding token (much less frequent)
@@ -432,6 +525,12 @@ on('save-config', async (msg: RepoConfig) => {
         addToken(node, undefined);
         return;
       }
+      
+      // Check if this is an unwrapped composite token (typography/border/shadow without 'value' wrapper)
+      if (isUnwrappedCompositeToken(node, pathStack)) {
+        addToken(node, undefined);
+        return;
+      }
 
       // If it's an object/array, recurse into children
       if (typeof node === 'object') {
@@ -461,7 +560,6 @@ on('save-config', async (msg: RepoConfig) => {
   // OPTIMIZED: Parallel file fetching with batched Promise.all + Caching + Streaming
   // ============================================================================
   const FETCH_BATCH_SIZE = 5; // Fetch 5 files in parallel (avoid rate limiting)
-  const MAX_TOKENS_TO_SEND = 500; // Increased cap since we're more efficient now
   const STREAM_CHUNK_SIZE = 100; // Send tokens in chunks for progressive loading
 
   on('fetch-tokens', async (msg: { repoUrl: string; token: string; branch: string; filePath?: string; forceRefresh?: boolean }) => {
@@ -638,25 +736,24 @@ on('save-config', async (msg: RepoConfig) => {
 
           // Add tokens and stream chunks
           for (const t of extracted) {
-            if (allTokens.length < MAX_TOKENS_TO_SEND) {
-              const formattedToken = {
-                name: t.name || '',
-                path: t.path || '',
-                type: t.type || 'unknown',
-                sourceFile: t.sourceFile || ''
-              };
-              allTokens.push(formattedToken);
-              chunkBuffer.push(formattedToken);
-              
-              // Stream chunk when buffer is full
-              if (chunkBuffer.length >= STREAM_CHUNK_SIZE) {
-                emit('tokens-chunk', {
-                  tokens: chunkBuffer,
-                  chunkIndex: chunkIndex++,
-                  isLast: false
-                });
-                chunkBuffer = [];
-              }
+            const formattedToken = {
+              name: t.name || '',
+              path: t.path || '',
+              type: t.type || 'unknown',
+              sourceFile: t.sourceFile || '',
+              value: t.value // Include value for search and display
+            };
+            allTokens.push(formattedToken);
+            chunkBuffer.push(formattedToken);
+            
+            // Stream chunk when buffer is full
+            if (chunkBuffer.length >= STREAM_CHUNK_SIZE) {
+              emit('tokens-chunk', {
+                tokens: chunkBuffer,
+                chunkIndex: chunkIndex++,
+                isLast: false
+              });
+              chunkBuffer = [];
             }
           }
 
@@ -704,7 +801,6 @@ on('save-config', async (msg: RepoConfig) => {
         tokens: allTokens,
         metadata: {
           totalTokens,
-          truncated: totalTokens > MAX_TOKENS_TO_SEND,
           filesProcessed: filesProcessed,
           totalFiles: tokenFiles.length,
           perFileCounts,

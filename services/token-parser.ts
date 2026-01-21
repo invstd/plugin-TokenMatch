@@ -155,11 +155,49 @@ export class TokenParser {
       return true;
     }
     
-    // If value is an object (like typography or shadow composite tokens)
+    // If value is an object (like typography, shadow, or border composite tokens)
     if (typeof value === 'object' && value !== null) {
-      // Check if it has typical token properties
-      const hasTokenProps = 'type' in obj || 'description' in obj;
-      return hasTokenProps;
+      // Check if parent has explicit token properties (type, description)
+      if ('type' in obj || 'description' in obj) {
+        return true;
+      }
+      
+      // Check if value object looks like a known composite token type:
+      // - Border: has color, width, style
+      // - Typography: has fontFamily, fontSize, fontWeight, lineHeight
+      // - Shadow: has color, x/offsetX, y/offsetY, blur, spread
+      // - Gradient: has type, stops
+      const valueKeys = Object.keys(value);
+      
+      // Border composite token
+      if (valueKeys.some(k => ['color', 'width', 'style'].includes(k.toLowerCase()))) {
+        // At least 2 of the border properties
+        const borderProps = valueKeys.filter(k => 
+          ['color', 'width', 'style', 'bordercolor', 'borderwidth', 'borderstyle'].includes(k.toLowerCase())
+        );
+        if (borderProps.length >= 2) return true;
+      }
+      
+      // Typography composite token
+      if (valueKeys.some(k => ['fontfamily', 'fontsize', 'fontweight', 'lineheight', 'letterspacing'].includes(k.toLowerCase()))) {
+        return true;
+      }
+      
+      // Shadow composite token
+      if (valueKeys.some(k => ['blur', 'spread', 'offsetx', 'offsety', 'x', 'y'].includes(k.toLowerCase())) &&
+          valueKeys.some(k => k.toLowerCase() === 'color')) {
+        return true;
+      }
+      
+      // If the value object has fewer than 6 keys and contains alias references,
+      // it's likely a composite token with resolved references
+      if (valueKeys.length <= 6 && valueKeys.length >= 2) {
+        const hasAliasValues = valueKeys.some(k => {
+          const v = value[k];
+          return typeof v === 'string' && (v.startsWith('{') || v.startsWith('$'));
+        });
+        if (hasAliasValues) return true;
+      }
     }
     
     return false;
@@ -218,6 +256,17 @@ export class TokenParser {
     if (pathStr.includes('shadow')) {
       return 'shadow';
     }
+    // Check for specific border types BEFORE generic 'border'
+    // This ensures border.radius.md gets 'borderRadius' not 'border'
+    if (pathStr.includes('radius') || pathStr.includes('corner') || pathStr.includes('rounded')) {
+      return 'borderRadius';
+    }
+    if (pathStr.includes('borderwidth') || pathStr.includes('strokeweight') || 
+        pathStr.includes('stroke-weight') || pathStr.includes('border-width') ||
+        (pathStr.includes('border') && pathStr.includes('width'))) {
+      return 'borderWidth';
+    }
+    // Generic 'border' type for composite tokens (with color, width, style)
     if (pathStr.includes('border')) {
       return 'border';
     }
@@ -349,6 +398,12 @@ export class TokenParser {
         return this.validateTypography(value);
       case 'shadow':
         return this.validateShadow(value);
+      case 'border':
+        return this.validateBorder(value);
+      case 'borderRadius':
+      case 'borderWidth':
+        // These are essentially dimensions
+        return this.validateDimension(value);
       default:
         return { valid: true };
     }
@@ -375,9 +430,16 @@ export class TokenParser {
 
   private validateDimension(value: any): { valid: boolean; message?: string; severity?: 'error' | 'warning' } {
     if (typeof value === 'string') {
-      const dimensionPattern = /^-?\d+(\.\d+)?(px|rem|em|pt|pc|in|cm|mm|q|vh|vw|vmin|vmax|%)$/;
-      if (!dimensionPattern.test(value)) {
-        return { valid: false, message: `Invalid dimension format: ${value}`, severity: 'error' };
+      // Accept dimension with units
+      const dimensionWithUnitsPattern = /^-?\d+(\.\d+)?(px|rem|em|pt|pc|in|cm|mm|q|vh|vw|vmin|vmax|%)$/;
+      // Also accept plain numbers as strings (common in token files)
+      const plainNumberPattern = /^-?\d+(\.\d+)?$/;
+      // Also accept alias references
+      const aliasPattern = /^[{$]/;
+      
+      if (!dimensionWithUnitsPattern.test(value) && !plainNumberPattern.test(value) && !aliasPattern.test(value)) {
+        // Only warn, don't error - some tokens use unconventional formats
+        return { valid: true, message: `Unusual dimension format: ${value}`, severity: 'warning' };
       }
     } else if (typeof value === 'number') {
       // Numbers are acceptable for dimensions
@@ -443,6 +505,38 @@ export class TokenParser {
     }
 
     return { valid: true };
+  }
+
+  private validateBorder(value: any): { valid: boolean; message?: string; severity?: 'error' | 'warning' } {
+    // Border can be a composite object with color, width, style
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      // Composite border token - should have at least width or color
+      const hasWidth = 'width' in value || 'borderWidth' in value;
+      const hasColor = 'color' in value || 'borderColor' in value;
+      const hasStyle = 'style' in value || 'borderStyle' in value;
+      
+      if (!hasWidth && !hasColor && !hasStyle) {
+        return { valid: false, message: 'Border token should have width, color, or style', severity: 'warning' };
+      }
+      return { valid: true };
+    }
+    
+    // Border can also be a string (CSS shorthand like "1px solid #000")
+    if (typeof value === 'string') {
+      // Accept alias references
+      if (value.startsWith('{') || value.startsWith('$')) {
+        return { valid: true };
+      }
+      // Accept CSS border shorthand format
+      return { valid: true };
+    }
+    
+    // Numbers are acceptable (for simple border width)
+    if (typeof value === 'number') {
+      return { valid: true };
+    }
+    
+    return { valid: false, message: 'Border value must be an object, string, or number', severity: 'error' };
   }
 
   /**

@@ -253,7 +253,39 @@ export class GitHubTokenService {
         return true;
       }
       if (typeof value === 'object' && value !== null) {
-        return 'type' in obj || 'description' in obj;
+        // Check if parent has explicit token properties
+        if ('type' in obj || 'description' in obj) return true;
+        
+        // Check if value object looks like a known composite token type
+        const valueKeys = Object.keys(value);
+        
+        // Border composite token (has color + width or style)
+        if (valueKeys.some(k => ['color', 'width', 'style'].includes(k.toLowerCase()))) {
+          const borderProps = valueKeys.filter(k => 
+            ['color', 'width', 'style', 'bordercolor', 'borderwidth', 'borderstyle'].includes(k.toLowerCase())
+          );
+          if (borderProps.length >= 2) return true;
+        }
+        
+        // Typography composite token
+        if (valueKeys.some(k => ['fontfamily', 'fontsize', 'fontweight', 'lineheight', 'letterspacing'].includes(k.toLowerCase()))) {
+          return true;
+        }
+        
+        // Shadow composite token
+        if (valueKeys.some(k => ['blur', 'spread', 'offsetx', 'offsety', 'x', 'y'].includes(k.toLowerCase())) &&
+            valueKeys.some(k => k.toLowerCase() === 'color')) {
+          return true;
+        }
+        
+        // If value contains alias references, likely a composite token
+        if (valueKeys.length <= 6 && valueKeys.length >= 2) {
+          const hasAliasValues = valueKeys.some(k => {
+            const v = value[k];
+            return typeof v === 'string' && (v.startsWith('{') || v.startsWith('$'));
+          });
+          if (hasAliasValues) return true;
+        }
       }
       return false;
     };
@@ -272,13 +304,43 @@ export class GitHubTokenService {
 
     const inferType = (val: any, p: string[]): string => {
       const ps = p.join('.').toLowerCase();
+      
+      // Handle composite object values (border, typography, shadow)
+      if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+        const keys = Object.keys(val).map(k => k.toLowerCase());
+        
+        // Border composite: has color + width or style
+        if (keys.some(k => ['width', 'style'].includes(k)) && keys.includes('color')) {
+          return 'border';
+        }
+        
+        // Typography composite: has fontFamily, fontSize, etc.
+        if (keys.some(k => ['fontfamily', 'fontsize', 'fontweight', 'lineheight'].includes(k))) {
+          return 'typography';
+        }
+        
+        // Shadow composite: has blur, spread, offset, color
+        if (keys.some(k => ['blur', 'spread', 'x', 'y', 'offsetx', 'offsety'].includes(k))) {
+          return 'shadow';
+        }
+      }
+      
       if (typeof val === 'string') {
         if (val.match(/^#[0-9A-Fa-f]{3,8}$/) || val.match(/^rgba?\(/) || val.match(/^hsla?\(/) || ps.includes('color')) return 'color';
         if (val.match(/^\d+(\.\d+)?(ms|s)$/) || ps.includes('duration')) return 'duration';
-        if (val.match(/^-?\d+(\.\d+)?(px|rem|em|pt|pc|in|cm|mm|q|vh|vw|vmin|vmax|%)$/) || ps.includes('size') || ps.includes('spacing') || ps.includes('radius')) return 'dimension';
+        if (val.match(/^-?\d+(\.\d+)?(px|rem|em|pt|pc|in|cm|mm|q|vh|vw|vmin|vmax|%)$/) || ps.includes('size') || ps.includes('spacing')) return 'dimension';
         if (ps.includes('font') || ps.includes('typography')) return 'typography';
         if (ps.includes('shadow')) return 'shadow';
+        // Check for border types BEFORE generic border
+        if (ps.includes('radius') || ps.includes('corner') || ps.includes('rounded')) return 'borderRadius';
+        if (ps.includes('borderwidth') || ps.includes('strokeweight') || (ps.includes('border') && ps.includes('width'))) return 'borderWidth';
+        if (ps.includes('border')) return 'border';
       } else if (typeof val === 'number') {
+        // Numbers in spacing/size/radius paths are dimensions
+        if (ps.includes('spacing') || ps.includes('size') || ps.includes('radius') || ps.includes('gap') || 
+            ps.includes('padding') || ps.includes('margin') || ps.includes('width') || ps.includes('height')) {
+          return 'dimension';
+        }
         return 'number';
       }
       return 'string';

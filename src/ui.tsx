@@ -757,9 +757,8 @@ function Plugin() {
                     }}>
                       {filteredTokens.length} match{filteredTokens.length !== 1 ? 'es' : ''} - click or press Enter
                     </div>
-                    {filteredTokens.slice(0, 50).map((t, i) => {
+                    {filteredTokens.map((t, i) => {
                       const fullPath = getTokenFullPath(t);
-                      const valueStr = safeString(t.value);
                       return (
                         <div
                           key={i}
@@ -774,26 +773,16 @@ function Plugin() {
                             padding: '8px', 
                             cursor: 'pointer',
                             backgroundColor: 'transparent',
-                            borderBottom: i < Math.min(filteredTokens.length, 50) - 1 ? '1px solid var(--figma-color-border)' : 'none',
+                            borderBottom: i < filteredTokens.length - 1 ? '1px solid var(--figma-color-border)' : 'none',
                             transition: 'background-color 0.1s ease'
                           }}
                         >
                           <div style={{ fontSize: '11px', fontWeight: i === 0 ? 600 : 400, wordBreak: 'break-all', lineHeight: '16px', color: 'var(--figma-color-text)' }}>
                             {fullPath}
                           </div>
-                          {valueStr && (
-                            <div style={{ fontSize: '10px', color: 'var(--figma-color-text-tertiary)', lineHeight: '14px', marginTop: '2px' }}>
-                              → {valueStr.substring(0, 50)}{valueStr.length > 50 ? '...' : ''}
-                            </div>
-                          )}
                         </div>
                       );
                     })}
-                    {filteredTokens.length > 50 && (
-                      <div style={{ fontSize: '10px', color: 'var(--figma-color-text-secondary)', padding: '8px' }}>
-                        ...and {filteredTokens.length - 50} more
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', padding: '8px' }}>
@@ -1024,6 +1013,21 @@ function Plugin() {
                         // Remove context prefix like "[horizontal] " from display
                         tokenPath = tokenPath.replace(/^\[\w+\]\s*/, '');
                         
+                        // Check if tokenPath is a composite JSON object and extract info
+                        const isCompositeValue = tokenPath.startsWith('{') && tokenPath.includes(':');
+                        let compositeInfo: { type: string; count: number } | null = null;
+                        if (isCompositeValue) {
+                          try {
+                            const parsed = JSON.parse(tokenPath);
+                            const count = Object.keys(parsed).length;
+                            const typeLabel = (match?.propertyType || 'composite').charAt(0).toUpperCase() + (match?.propertyType || 'composite').slice(1);
+                            compositeInfo = { type: typeLabel, count };
+                          } catch {
+                            // Not valid JSON, will show as-is
+                          }
+                        }
+                        const displayTokenPath = isCompositeValue && compositeInfo ? '' : tokenPath;
+                        
                         // Extract pixel value for spacing
                         const pxMatch = match?.matchedValue?.match?.(/^(\d+(?:\.\d+)?)(px|rem|em)?/);
                         const pxValue = pxMatch ? `${pxMatch[1]}${pxMatch[2] || 'px'}` : null;
@@ -1137,19 +1141,39 @@ function Plugin() {
                               </Button>
                             </div>
 
-                            {/* Row 2: Token path */}
+                            {/* Row 2: Token path or composite info */}
                             <div style={{ 
-                              height: '24px',
+                              height: '36px',
                               padding: '0 8px',
                               display: 'flex',
-                              alignItems: 'center'
+                              alignItems: 'center',
+                              gap: '8px'
                             }}>
-                              <span style={{ color: 'var(--figma-color-text-secondary)', fontSize: '11px', fontWeight: 400 }}>
-                                {tokenPath}
-                              </span>
+                              {compositeInfo ? (
+                                <div style={{ display: 'contents' }}>
+                                  <span style={{ 
+                                    padding: '2px 6px',
+                                    background: 'var(--figma-color-bg-tertiary)',
+                                    borderRadius: '3px',
+                                    color: 'var(--figma-color-text)',
+                                    fontSize: '10px',
+                                    fontWeight: 500
+                                  }}>
+                                    {compositeInfo.type}
+                                  </span>
+                                  <span style={{ color: 'var(--figma-color-text-secondary)', fontSize: '11px', fontWeight: 400 }}>
+                                    Composite of {compositeInfo.count} values
+                                  </span>
+                                </div>
+                              ) : (
+                                <span style={{ color: 'var(--figma-color-text-secondary)', fontSize: '11px', fontWeight: 400 }}>
+                                  {displayTokenPath}
+                                </span>
+                              )}
                             </div>
 
-                            {/* Row 3: Property details with badges */}
+                            {/* Row 3: Property details with badges (hidden for composite tokens) */}
+                            {!compositeInfo && (
                             <div style={{ 
                               minHeight: '32px',
                               padding: '6px 8px',
@@ -1260,6 +1284,7 @@ function Plugin() {
                                 </span>
                               )}
                             </div>
+                            )}
                           </div>
                           );
                           })}
@@ -1431,6 +1456,28 @@ function Plugin() {
             }} secondary>
               Clear All Data
             </Button>
+            
+            {selectedBranch && tokenCount > 0 && (
+              <Button 
+                onClick={() => {
+                  if (repoUrl && token && selectedBranch) {
+                    setLoading(true);
+                    setLoadingMessage('Re-fetching tokens...');
+                    emit('fetch-tokens', { 
+                      repoUrl, 
+                      token, 
+                      branch: selectedBranch, 
+                      filePath: filePath || '',
+                      forceRefresh: true 
+                    });
+                  }
+                }} 
+                secondary
+                disabled={loading}
+              >
+                Clear Cache & Refresh
+              </Button>
+            )}
 
           </Stack>
         ) : (
