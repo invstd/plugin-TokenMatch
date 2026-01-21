@@ -1381,7 +1381,7 @@ function Plugin() {
                 borderRadius: '6px',
                 border: '1px solid var(--figma-color-border-success)'
               }}>
-                <Text style={{ fontSize: '12px', fontWeight: '600', color: 'var(--figma-color-text-success)' }}>
+                <Text style={{ fontSize: '12px', fontWeight: '600', color: 'var(--figma-color-text-onsuccess)' }}>
                   ✓ Found {tokenCount} token{tokenCount !== 1 ? 's' : ''} in {fileCount} file{fileCount !== 1 ? 's' : ''}
                 </Text>
               </div>
