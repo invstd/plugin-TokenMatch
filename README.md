@@ -173,9 +173,19 @@ Current version: **1.0.0**
 - Verify the token value exists in your components
 - Check that components aren't using hardcoded values
 
+## 📚 Documentation
+
+For comprehensive documentation, see the `/documentation` folder:
+
+- **[Documentation Overview](./documentation/README.md)** - Start here for an overview
+- **[Development Guide](./documentation/DEVELOPMENT.md)** - Architecture, setup, and contribution guide
+- **[API Documentation](./documentation/API.md)** - Complete API reference for all services
+
 ## 🤝 Contributing
 
 This is an open-source project. Issues and pull requests are welcome!
+
+For development setup, architecture details, and contribution guidelines, see the [Development Guide](./documentation/DEVELOPMENT.md).
 
 ## 📄 License
 

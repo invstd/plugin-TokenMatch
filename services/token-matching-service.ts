@@ -709,9 +709,28 @@ export class TokenMatchingService {
       const colorRef = this.extractTokenReference(borderObj.color);
       const widthRef = this.extractTokenReference(borderObj.width);
 
+      // DEBUG: Log what we found
+      console.log(`[Border Composite] Token: ${tokenPath}`);
+      console.log(`  - Border value:`, borderObj);
+      console.log(`  - Extracted colorRef: "${colorRef}"`);
+      console.log(`  - Extracted widthRef: "${widthRef}"`);
+      console.log(`  - Component ID: ${component.id}, Name: ${component.name}`);
+      console.log(`  - Component stroke colors:`, component.colors.filter(c => c.type === 'stroke').map(c => ({ hex: c.hex, tokenRef: c.tokenReference })));
+      console.log(`  - Component borderWidths:`, component.spacing.filter(s => s.type === 'borderWidth').map(s => ({ value: s.value, unit: s.unit, tokenRef: s.tokenReference })));
+      console.log(`  - Component has ${component.children?.length || 0} children`);
+      
+      // Also log if the component has ANY strokes or borders at all
+      const allStrokes = component.colors.filter(c => c.type === 'stroke');
+      const allBorderWidths = component.spacing.filter(s => s.type === 'borderWidth');
+      if (allStrokes.length === 0 && allBorderWidths.length === 0) {
+        console.log(`  ⚠️ WARNING: Component "${component.name}" has NO strokes or border widths at all!`);
+      }
+
       // Match the inner color reference against stroke colors
       if (colorRef) {
         const normalizedColorRef = colorRef.toLowerCase();
+        
+        console.log(`  - Attempting to match colorRef: "${normalizedColorRef}"`);
         
         for (const color of component.colors.filter(c => c.type === 'stroke')) {
           if (color.tokenReference) {
@@ -722,10 +741,13 @@ export class TokenMatchingService {
             
             const normalizedComponentRef = componentRef.toLowerCase();
             
+            console.log(`    - Comparing against component stroke tokenRef: "${normalizedComponentRef}"`);
+            
             // Check if the component's reference matches the inner color reference
             if (normalizedComponentRef === normalizedColorRef ||
                 normalizedComponentRef.endsWith('.' + normalizedColorRef) ||
                 normalizedColorRef.endsWith('.' + normalizedComponentRef)) {
+              console.log(`    ✓ MATCH FOUND!`);
               matches.push({
                 property: `stroke color (via ${tokenPath})`,
                 propertyType: 'color',
@@ -742,6 +764,8 @@ export class TokenMatchingService {
       if (widthRef) {
         const normalizedWidthRef = widthRef.toLowerCase();
         
+        console.log(`  - Attempting to match widthRef: "${normalizedWidthRef}"`);
+        
         for (const spacing of component.spacing.filter(s => s.type === 'borderWidth')) {
           if (spacing.tokenReference) {
             let componentRef = spacing.tokenReference.trim()
@@ -751,16 +775,70 @@ export class TokenMatchingService {
             
             const normalizedComponentRef = componentRef.toLowerCase();
             
+            console.log(`    - Comparing against component borderWidth tokenRef: "${normalizedComponentRef}"`);
+            
             // Check if the component's reference matches the inner width reference
             if (normalizedComponentRef === normalizedWidthRef ||
                 normalizedComponentRef.endsWith('.' + normalizedWidthRef) ||
                 normalizedWidthRef.endsWith('.' + normalizedComponentRef)) {
+              console.log(`    ✓ MATCH FOUND!`);
               matches.push({
                 property: `border-width (via ${tokenPath})`,
                 propertyType: 'spacing',
                 matchedValue: `${spacing.value}${spacing.unit} ← ${spacing.tokenReference}`,
                 tokenValue: `${tokenPath} → width: ${borderObj.width}`,
                 confidence: 0.95
+              });
+            }
+          }
+        }
+      }
+      
+      // FALLBACK: If no reference-based matches found, try value-based matching
+      // This handles cases where Tokens Studio hasn't stored token references,
+      // or where the component doesn't have the token metadata
+      if (matches.length === 0 && colorRef && widthRef) {
+        console.log(`  - No reference matches found, attempting VALUE-BASED matching...`);
+        
+        // Try to resolve the inner token references to actual values
+        // by looking them up in the token system (if available)
+        // For now, we'll match against any stroke colors and border widths by value
+        
+        // Get the resolved color value if the inner ref has been resolved
+        const colorToken = token.value.color;
+        if (colorToken && !colorToken.startsWith('{')) {
+          // colorToken is an actual color value (already resolved)
+          const normalizedColorValue = this.normalizeColor(colorToken);
+          
+          for (const color of component.colors.filter(c => c.type === 'stroke')) {
+            const normalizedComponentColor = this.normalizeColor(color.hex);
+            if (normalizedColorValue === normalizedComponentColor) {
+              console.log(`    ✓ VALUE MATCH for stroke color: ${color.hex}`);
+              matches.push({
+                property: `stroke color (value match via ${tokenPath})`,
+                propertyType: 'color',
+                matchedValue: `${color.hex}`,
+                tokenValue: `${tokenPath} → color value: ${colorToken}`,
+                confidence: 0.75  // Lower confidence for value-only matches
+              });
+            }
+          }
+        }
+        
+        // Get the resolved width value
+        const widthToken = token.value.width;
+        if (widthToken && !widthToken.startsWith('{')) {
+          const normalizedWidthValue = this.normalizeDimension(widthToken);
+          
+          for (const spacing of component.spacing.filter(s => s.type === 'borderWidth')) {
+            if (normalizedWidthValue !== null && Math.abs(spacing.value - normalizedWidthValue) < 0.5) {
+              console.log(`    ✓ VALUE MATCH for border width: ${spacing.value}${spacing.unit}`);
+              matches.push({
+                property: `border-width (value match via ${tokenPath})`,
+                propertyType: 'spacing',
+                matchedValue: `${spacing.value}${spacing.unit}`,
+                tokenValue: `${tokenPath} → width value: ${widthToken}`,
+                confidence: 0.75  // Lower confidence for value-only matches
               });
             }
           }
@@ -776,6 +854,14 @@ export class TokenMatchingService {
           m.property = m.property.replace('(via ', '(full match via ');
         });
       }
+      
+      // DEBUG: Log matching results
+      console.log(`  - Found ${matches.length} matches for composite border`);
+      if (matches.length > 0) {
+        matches.forEach(m => console.log(`    * ${m.property}: ${m.matchedValue} (confidence: ${m.confidence})`));
+      }
+    } else {
+      console.log(`[Border Token] "${tokenPath}" is NOT a composite (value type: ${typeof tokenValue})`);
     }
 
     // Also try direct token reference matching for the border token itself
@@ -859,6 +945,13 @@ export class TokenMatchingService {
     // Filter out duplicates and return high-confidence matches
     const uniqueMatches = this.deduplicateMatches(matches);
     const highConfidenceMatches = uniqueMatches.filter(m => m.confidence >= 0.85);
+    
+    // DEBUG: Log final results
+    console.log(`[Border Matching] Final results for "${tokenPath}":`);
+    console.log(`  - Total matches found: ${matches.length}`);
+    console.log(`  - Unique matches: ${uniqueMatches.length}`);
+    console.log(`  - High confidence (>=0.85): ${highConfidenceMatches.length}`);
+    console.log(`  - Returning: ${highConfidenceMatches.length > 0 ? highConfidenceMatches.length : uniqueMatches.length} matches`);
     
     return highConfidenceMatches.length > 0 ? highConfidenceMatches : uniqueMatches;
   }

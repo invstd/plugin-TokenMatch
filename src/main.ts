@@ -1513,7 +1513,6 @@ interface PluginDataInspection {
   nodeType: string;
   pluginData: Record<string, string>;
   sharedPluginData: Record<string, Record<string, string>>;
-  boundVariables?: Record<string, any>;
 }
 
 /**
@@ -1555,8 +1554,7 @@ function inspectPluginData(node: SceneNode): PluginDataInspection {
     // Common other plugin namespaces
     'ds',
     'design-system',
-    'theme',
-    'variables'
+    'theme'
   ];
 
   for (const namespace of namespaces) {
@@ -1574,48 +1572,6 @@ function inspectPluginData(node: SceneNode): PluginDataInspection {
     }
   }
 
-  // Also check for Figma Variables (modern approach)
-  try {
-    if ('boundVariables' in node && node.boundVariables) {
-      results.boundVariables = {};
-      const boundVars = node.boundVariables as Record<string, any>;
-      for (const [prop, binding] of Object.entries(boundVars)) {
-        if (binding) {
-          // Try to get variable details
-          if (Array.isArray(binding)) {
-            results.boundVariables[prop] = binding.map((b: any) => {
-              try {
-                const variable = figma.variables.getVariableById(b.id);
-                return {
-                  id: b.id,
-                  name: variable?.name,
-                  resolvedType: variable?.resolvedType,
-                  valuesByMode: variable?.valuesByMode
-                };
-              } catch {
-                return { id: b.id, error: 'Could not resolve variable' };
-              }
-            });
-          } else if (binding.id) {
-            try {
-              const variable = figma.variables.getVariableById(binding.id);
-              results.boundVariables[prop] = {
-                id: binding.id,
-                name: variable?.name,
-                resolvedType: variable?.resolvedType,
-                valuesByMode: variable?.valuesByMode
-              };
-            } catch {
-              results.boundVariables[prop] = { id: binding.id, error: 'Could not resolve variable' };
-            }
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.error('Error getting bound variables:', e);
-  }
-
   return results;
 }
 
@@ -1631,8 +1587,7 @@ function inspectNodeTree(node: SceneNode, maxDepth: number = 3, currentDepth: nu
   // Only include if there's actual data
   const hasData = 
     Object.keys(inspection.pluginData).length > 0 ||
-    Object.keys(inspection.sharedPluginData).length > 0 ||
-    (inspection.boundVariables && Object.keys(inspection.boundVariables).length > 0);
+    Object.keys(inspection.sharedPluginData).length > 0;
   
   // Always include the node itself for context, mark if it has data
   results.push({
@@ -1677,8 +1632,7 @@ on('inspect-selection', async () => {
     const nodesWithData = allResults.filter(r => 
       !r.pluginData['_noData'] &&
       (Object.keys(r.pluginData).length > 0 ||
-       Object.keys(r.sharedPluginData).length > 0 ||
-       (r.boundVariables && Object.keys(r.boundVariables).length > 0))
+       Object.keys(r.sharedPluginData).length > 0)
     );
     
     // Clean up the _noData marker
@@ -1695,8 +1649,7 @@ on('inspect-selection', async () => {
         totalNodesInspected: allResults.length,
         nodesWithPluginData: nodesWithData.length,
         namespacesFound: Array.from(new Set(nodesWithData.flatMap(r => Object.keys(r.sharedPluginData)))),
-        pluginDataKeysFound: Array.from(new Set(nodesWithData.flatMap(r => Object.keys(r.pluginData)))),
-        hasVariableBindings: nodesWithData.some(r => r.boundVariables && Object.keys(r.boundVariables).length > 0)
+        pluginDataKeysFound: Array.from(new Set(nodesWithData.flatMap(r => Object.keys(r.pluginData))))
       }
     });
   } catch (error) {

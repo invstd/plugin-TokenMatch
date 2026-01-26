@@ -1,123 +1,131 @@
 # TokenMatch Documentation
 
-This folder contains comprehensive documentation for the TokenMatch Figma plugin.
+Welcome to the TokenMatch plugin documentation.
 
-## 📚 Documentation Index
+## 📘 What is TokenMatch?
 
-### Core Documentation
+TokenMatch is a Figma plugin that helps you discover which components in your Figma file are using specific design tokens from your GitHub repository. It bridges the gap between your token system and your Figma components.
 
-- **[TOKEN-MATCH.MD](./TOKEN-MATCH.MD)** - Main plugin documentation covering features, usage, and architecture
+## 🚀 Quick Start
 
-### Implementation Guides
+### For Users
 
-- **[CUSTOM_SCROLLBAR_IMPLEMENTATION.md](./CUSTOM_SCROLLBAR_IMPLEMENTATION.md)** - Complete guide for implementing a custom JavaScript scrollbar in Figma plugins to prevent layout shift
-
-- **[TOKENS_STUDIO_INTEGRATION_GUIDE.md](./TOKENS_STUDIO_INTEGRATION_GUIDE.md)** - Guide for integrating with Tokens Studio format
-
-### Performance & Optimization
-
-- **[PERFORMANCE_OPTIMIZATION_PLAN.md](./PERFORMANCE_OPTIMIZATION_PLAN.md)** - Detailed plan for optimizing plugin performance
-
-- **[OPTIMIZATION_GUIDE.md](./OPTIMIZATION_GUIDE.md)** - Comprehensive optimization strategies and implementation details
-
-- **[OPTIMIZATION_IMPLEMENTATION.md](./OPTIMIZATION_IMPLEMENTATION.md)** - Step-by-step optimization implementation
-
-- **[OPTIMIZATION_STATUS_FINAL.md](./OPTIMIZATION_STATUS_FINAL.md)** - Final status report on optimization efforts
-
-### Development Notes
-
-- **[BUILD_FIX.md](./BUILD_FIX.md)** - Build system fixes and troubleshooting
-
-- **[PLAN_REVIEW.md](./PLAN_REVIEW.md)** - Project planning and review notes
-
-## 🎯 Quick Links
-
-### For Plugin Users
-Start with [TOKEN-MATCH.MD](./TOKEN-MATCH.MD) for usage instructions and features.
+1. **Install the plugin** in Figma
+2. **Configure GitHub connection** in Settings
+   - Add your repository URL
+   - Provide a GitHub Personal Access Token
+   - Select your branch
+3. **Search for a token** and select it
+4. **Choose scan scope** (All pages, Current page, or Selection)
+5. **Click "Match"** to find components using that token
 
 ### For Developers
-- **Custom Scrollbar Implementation**: [CUSTOM_SCROLLBAR_IMPLEMENTATION.md](./CUSTOM_SCROLLBAR_IMPLEMENTATION.md)
-- **Performance Best Practices**: [OPTIMIZATION_GUIDE.md](./OPTIMIZATION_GUIDE.md)
-- **Architecture Overview**: [TOKEN-MATCH.MD](./TOKEN-MATCH.MD)
 
-### For Contributors
-Review [PERFORMANCE_OPTIMIZATION_PLAN.md](./PERFORMANCE_OPTIMIZATION_PLAN.md) and [OPTIMIZATION_STATUS_FINAL.md](./OPTIMIZATION_STATUS_FINAL.md) to understand the current state and optimization approach.
+See the [Development Guide](./DEVELOPMENT.md) for:
+- Project structure
+- Build instructions
+- Architecture overview
+- Contributing guidelines
 
-## 📝 Document Descriptions
+## 📚 Documentation
 
-| Document | Purpose | Audience |
-|----------|---------|----------|
-| TOKEN-MATCH.MD | Main plugin documentation | Users & Developers |
-| CUSTOM_SCROLLBAR_IMPLEMENTATION.md | UI implementation guide | Developers |
-| TOKENS_STUDIO_INTEGRATION_GUIDE.md | Token format integration | Developers |
-| PERFORMANCE_OPTIMIZATION_PLAN.md | Performance strategy | Contributors |
-| OPTIMIZATION_GUIDE.md | Optimization techniques | Developers |
-| OPTIMIZATION_IMPLEMENTATION.md | Implementation details | Developers |
-| OPTIMIZATION_STATUS_FINAL.md | Status report | Project Managers |
-| BUILD_FIX.md | Build troubleshooting | Developers |
-| PLAN_REVIEW.md | Planning notes | Project Managers |
+### Getting Started
+- **[README.md](./README.md)** - This file, general overview
 
-## 🔧 Technical Highlights
+### Core Features
+- **[TOKEN-FETCHING.md](./TOKEN-FETCHING.md)** - How to connect to GitHub and fetch design tokens
+- **[TOKEN-MATCHING.md](./TOKEN-MATCHING.md)** - How token matching works, confidence scoring, and strategies
+- **[COMPONENT-PASTING.md](./COMPONENT-PASTING.md)** - How to paste matching components to the canvas
 
-### Custom Scrollbar
-The plugin implements a custom JavaScript scrollbar to prevent layout shift issues common in Figma plugins. See [CUSTOM_SCROLLBAR_IMPLEMENTATION.md](./CUSTOM_SCROLLBAR_IMPLEMENTATION.md) for:
-- Why CSS-only solutions don't work
-- Complete implementation with React/Preact hooks
-- Drag & click interaction handling
-- Performance considerations
+### Technical Reference
+- **[DEVELOPMENT.md](./DEVELOPMENT.md)** - Development and architecture guide
+- **[API.md](./API.md)** - Technical API documentation
 
-### Performance Optimizations
-Key optimizations implemented:
-- Component scanning with batch processing
-- Token matching optimization
-- Virtual scrolling for results
-- Debounced search
-- Progressive loading
+## 🔑 Key Features
 
-See [OPTIMIZATION_STATUS_FINAL.md](./OPTIMIZATION_STATUS_FINAL.md) for full details.
+- ✅ Search through design tokens from your GitHub repository
+- ✅ Match tokens to component properties (colors, spacing, typography, effects)
+- ✅ Filter results by direct matches (excluding nested components)
+- ✅ View and navigate to matching components in Figma
+- ✅ Paste matching components to canvas
+- ✅ Optimized for large files with persistent caching
+
+## 🎯 Use Cases
+
+- **Token Adoption Tracking** - See which components use specific tokens
+- **Impact Analysis** - Understand what will change when you update a token
+- **Design System Audits** - Verify token usage across your design file
+- **Component Discovery** - Find all variants using a particular token value
+
+## 🛠️ Technical Stack
+
+- **Runtime**: Figma Plugin API
+- **UI**: Preact + TypeScript
+- **Styling**: Tailwind CSS v4
+- **Build**: @create-figma-plugin/build
+- **Token Integration**: Tokens Studio for Figma format
+
+## 📖 How It Works
+
+1. **Token Fetching**: Connects to your GitHub repository and parses token files (JSON, JS, TS)
+2. **Component Scanning**: Scans Figma components and extracts properties with Tokens Studio plugin data
+3. **Matching**: Uses priority-based matching:
+   - Token reference matching (highest confidence)
+   - Semantic token resolution
+   - Value-based matching (fallback)
+4. **Deduplication**: Filters out parent components that only match via nested children
+5. **Results**: Displays grouped results with component variants
+
+## 🔒 Privacy & Security
+
+- All processing happens locally in Figma
+- GitHub token stored securely in Figma's client storage
+- No data sent to external servers (except GitHub API)
+- Network access restricted to `api.github.com` only
 
 ## 📦 Project Structure
 
 ```
 /Users/mschultz/FigmaTokensChecker/v1/
-├── documentation/          # You are here
-│   ├── README.md          # This file
-│   ├── TOKEN-MATCH.MD     # Main docs
-│   └── ...                # Other docs
-├── src/                   # Source code
-│   ├── ui.tsx            # UI components
-│   ├── main.ts           # Plugin logic
-│   └── input.css         # Styles
-├── services/             # Core services
-│   ├── figma-component-service.ts
+├── documentation/        # This folder
+├── src/                 # Source code
+│   ├── ui.tsx          # UI components
+│   ├── main.ts         # Plugin logic
+│   └── input.css       # Tailwind input
+├── services/           # Core business logic
+│   ├── figma-component-service-optimized.ts
 │   ├── github-token-service.ts
-│   └── token-matching-service.ts
-├── types/                # TypeScript types
-└── build/                # Compiled output
+│   ├── token-matching-service.ts
+│   └── token-parser.ts
+├── types/             # TypeScript types
+├── build/             # Compiled output
+└── roadmap/           # Feature roadmap
 ```
+## 🐛 Troubleshooting
 
-## 🚀 Recent Updates
+### Plugin won't connect to GitHub
+- Verify your repository URL is correct
+- Check that your GitHub token has `repo` access
+- Ensure you have access to the repository
 
-### UI Optimizations (Latest)
-- ✅ Fixed dropdown hover states for token selection
-- ✅ Implemented custom scrollbar to prevent layout shift
-- ✅ Created comprehensive documentation
+### No matches found
+- Verify components have Tokens Studio plugin data applied
+- Check that you're scanning the correct pages
+- Try "All pages" mode instead of "Current page"
 
-### Performance Improvements
-- ✅ Optimized component scanning for large files
-- ✅ Implemented virtual scrolling for results
-- ✅ Added debounced search for better UX
+### Slow performance
+- Use "Current page" for faster iterations
+- Enable persistent caching (default)
+- Consider scanning specific pages only
 
-## 📖 Contributing
+## 📞 Support
 
-When adding new documentation:
-1. Place it in this `/documentation` folder
-2. Update this README.md with a link and description
-3. Follow the existing naming convention (uppercase for major docs)
-4. Include code examples where applicable
-5. Add a table of contents for long documents
+- **Issues**: [GitHub Issues](https://github.com/invstd/plugin-tokenmatcher/issues)
+- **Documentation**: This folder
+- **Email**: [Your support email]
 
-## 📄 License
+---
 
-All documentation is part of the TokenMatch project.
-
+**Version**: 1.0.0  
+**Last Updated**: January 2026  
+**Made with ❤️ for design systems teams**

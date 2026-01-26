@@ -93,36 +93,137 @@ TokensMatch currently excels at finding components that use specific design toke
 
 ---
 
+### 6. JSON/Folder Upload
+
+**Goal:** Allow users to upload token files directly via JSON file upload or folder selection instead of requiring a GitHub repository connection.
+
+**Key Capabilities:**
+- Single JSON file upload via file picker or drag-and-drop
+- Paste JSON content directly into a text area
+- Folder upload with recursive scanning of nested directories
+- Auto-detection of token formats (Style Dictionary, Tokens Studio, W3C DTCG)
+- Token persistence in plugin storage for session continuity
+
+**User Value:** Provides flexibility for teams who don't use GitHub or want to work with local token files without repository setup.
+
+**Implementation Reference:** [06-json-folder-upload.md](./roadmap/06-json-folder-upload.md)
+
+---
+
+### 7. Multiple Repository Providers
+
+**Goal:** Extend repository connectivity beyond GitHub to support BitBucket, GitLab, and custom Git URLs, enabling teams on different platforms to use TokensMatch.
+
+**Key Capabilities:**
+- Support for GitHub, GitLab (Cloud and Self-Managed), BitBucket (Cloud and Server)
+- Custom Git URL support for self-hosted or alternative Git providers
+- Multiple authentication methods: OAuth, Personal Access Tokens, App Passwords
+- Repository browsing, branch selection, and file path navigation
+- Provider-specific features (workspaces, groups, organizations)
+
+**User Value:** Removes GitHub dependency, allowing teams using any Git platform to connect their token repositories.
+
+**Implementation Reference:** [07-multiple-repository-providers.md](./roadmap/07-multiple-repository-providers.md)
+
+---
+
+### 8. Pre-scan Components
+
+**Goal:** Allow users to pre-scan all pages for components from the settings page, creating a cached index that makes subsequent token matching significantly faster.
+
+**Key Capabilities:**
+- "Scan All Pages" button in settings with progress indicator
+- Cache scanned component data in plugin storage
+- Display "Last scanned: [timestamp]" below Match button when cache exists
+- "Re-scan components before matching" checkbox option
+- Smart cache invalidation when file structure changes
+- Background scanning that doesn't block the UI
+
+**User Value:** Dramatically improves matching speed for large files by eliminating repeated full scans, providing a near-instant matching experience.
+
+**Implementation Reference:** [08-prescan-components.md](./roadmap/08-prescan-components.md)
+
+---
+
+### 9. Exclude Token Paths
+
+**Goal:** Allow users to configure token path patterns to exclude from matching results, enabling them to filter out primitive/base tokens and focus on semantic tokens intended for direct use.
+
+**Key Capabilities:**
+- Define glob-style exclusion patterns (e.g., `primitives.**`, `core.*`, `*.base.**`)
+- Quick presets for common token architectures (Primitives, Internal, Deprecated)
+- Real-time pattern testing with match preview
+- Toggle to show/hide excluded tokens in the UI
+- Transparent indicator showing excluded token count
+
+**User Value:** Reduces noise by hiding primitive tokens that shouldn't be used directly, helping designers focus on semantic tokens intended for component use.
+
+**Implementation Reference:** [09-exclude-token-paths.md](./roadmap/09-exclude-token-paths.md)
+
+---
+
 ## Feature Dependencies
 
 ```
-                    ┌─────────────────────┐
-                    │  Token Statistics   │
-                    │    Dashboard (3)    │
-                    └─────────┬───────────┘
-                              │ depends on
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-        ▼                     ▼                     ▼
-┌───────────────┐   ┌─────────────────┐   ┌─────────────────┐
-│Missing Token  │   │ Unused Token    │   │  JSON/CSV       │
-│ Detector (1)  │   │  Finder (2)     │   │  Export (4)     │
-└───────────────┘   └─────────────────┘   └────────┬────────┘
-                                                   │
-                                                   │ extends
-                                                   ▼
-                                          ┌─────────────────┐
-                                          │   Airtable      │
-                                          │ Integration (5) │
-                                          └─────────────────┘
+                         ┌─────────────────────┐
+                         │  Token Statistics   │
+                         │    Dashboard (3)    │
+                         └─────────┬───────────┘
+                                   │ depends on
+        ┌──────────────────────────┼──────────────────────────┐
+        │                          │                          │
+        ▼                          ▼                          ▼
+┌───────────────┐        ┌─────────────────┐        ┌─────────────────┐
+│ Missing Token │        │   Unused Token  │        │     JSON/CSV    │
+│ Detector (1)  │        │    Finder (2)   │        │    Export (4)   │
+└───────────────┘        └─────────────────┘        └────────┬────────┘
+                                                             │
+                                                             │ extends
+                                                             ▼
+                                                    ┌─────────────────┐
+                                                    │     Airtable    │
+                                                    │ Integration (5) │
+                                                    └─────────────────┘
+
+ ┌──────────────────────────────────────────────────────────────────┐
+ │                     Token Source Enhancements                    │
+ ├──────────────────────────────┬───────────────────────────────────┤
+ │                              │                                   │
+ │  ┌────────────────────┐      │      ┌────────────────────────┐   │
+ │  │  JSON/Folder       │      │      │  Multiple Repository   │   │
+ │  │  Upload (6)        │◄─────┼─────►│  Providers (7)         │   │
+ │  └────────────────────┘      │      └────────────────────────┘   │
+ │                              │                                   │
+ │        Alternative to GitHub connection                          │
+ └──────────────────────────────────────────────────────────────────┘
+
+ ┌──────────────────────────────────────────────────────────────────┐
+ │                     Performance & Filtering                      │
+ ├──────────────────────────────┬───────────────────────────────────┤
+ │                              │                                   │
+ │  ┌────────────────────┐      │      ┌────────────────────────┐   │
+ │  │  Pre-scan          │      │      │  Exclude Token         │   │
+ │  │  Components (8)    │      │      │  Paths (9)             │   │
+ │  └────────────────────┘      │      └────────────────────────┘   │
+ │          │                   │                 │                 │
+ │          ▼                   │                 ▼                 │
+ │   Faster matching            │         Cleaner results           │
+ │   operations                 │         (hide primitives)         │
+ │                              │                                   │
+ │        Improves core matching experience                         │
+ └──────────────────────────────────────────────────────────────────┘
 ```
 
 **Recommended Implementation Order:**
-1. **Missing Token Detector** - Extends existing scanning, high user value
-2. **Unused Token Finder** - Complements Missing Token Detector
-3. **Token Statistics Dashboard** - Leverages data from features 1 & 2
-4. **JSON/CSV Export** - Foundation for external integrations
-5. **Airtable Integration** - Builds on export infrastructure
+1. **Exclude Token Paths (9)** - Quick win, improves UX immediately
+2. **Pre-scan Components (8)** - Performance foundation, benefits all features
+3. **JSON/Folder Upload (6)** - Low complexity, immediate value for non-GitHub users
+4. **Multiple Repository Providers (7)** - Expands user base, pairs with feature 6
+5. **Missing Token Detector (1)** - Extends existing scanning, high user value
+6. **Unused Token Finder (2)** - Complements Missing Token Detector
+7. **Token Statistics Dashboard (3)** - Leverages data from features 1 & 2
+8. **JSON/CSV Export (4)** - Foundation for external integrations
+9. **Airtable Integration (5)** - Builds on export infrastructure
 
 ---
 
@@ -161,9 +262,11 @@ All features will benefit from these common enhancements:
 | Version | Features | Focus |
 |---------|----------|-------|
 | v1.x | Current | Token-to-component matching |
-| v2.0 | Features 1, 2 | Token coverage analysis |
-| v2.1 | Feature 3 | Analytics & insights |
-| v3.0 | Features 4, 5 | Export & integrations |
+| v1.2 | Features 8, 9 | Performance & filtering (pre-scan, exclusions) |
+| v1.3 | Features 6, 7 | Token source flexibility |
+| v1.4 | Features 1, 2 | Token coverage analysis |
+| v1.5 | Feature 3 | Analytics & insights |
+| v1.6 | Features 4, 5 | Export & integrations |
 
 ---
 

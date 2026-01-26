@@ -16,6 +16,8 @@ export interface ColorProperty {
   rgba: string;
   opacity: number;
   tokenReference?: string; // Token Studio token reference (e.g., "colors.primary.500")
+  nodeName?: string; // Name of the node where this color was found (for nested elements)
+  nodeId?: string; // ID of the node where this color was found
 }
 
 export interface TypographyProperty {
@@ -34,6 +36,8 @@ export interface SpacingProperty {
   value: number;
   unit: string;
   tokenReference?: string; // Token Studio token reference
+  nodeName?: string; // Name of the node where this spacing was found (for nested elements)
+  nodeId?: string; // ID of the node where this spacing was found
 }
 
 export interface EffectProperty {

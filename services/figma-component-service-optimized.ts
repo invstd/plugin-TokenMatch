@@ -1135,8 +1135,7 @@ export class FigmaComponentServiceOptimized {
     return refs.get('fill') ||
            refs.get(`fills.${index}`) ||
            refs.get(`fills[${index}]`) ||
-           refs.get('fillColor') ||
-           this.getVariableBindingFast(node, 'fills');
+           refs.get('fillColor');
   }
 
   private getStrokeTokenReferencesFast(node: SceneNode, index: number): string | undefined {
@@ -1144,8 +1143,7 @@ export class FigmaComponentServiceOptimized {
     return refs.get('stroke') ||
            refs.get(`strokes.${index}`) ||
            refs.get(`strokes[${index}]`) ||
-           refs.get('strokeColor') ||
-           this.getVariableBindingFast(node, 'strokes');
+           refs.get('strokeColor');
   }
 
   private getTypographyTokenFast(node: SceneNode): string | undefined {
@@ -1158,23 +1156,20 @@ export class FigmaComponentServiceOptimized {
 
   private getSpacingTokenFast(node: SceneNode, property: string): string | undefined {
     const refs = this.getNodeTokenRefs(node);
-    return refs.get(property) ||
-           this.getVariableBindingFast(node, property);
+    return refs.get(property);
   }
 
   private getBorderRadiusTokenFast(node: SceneNode): string | undefined {
     const refs = this.getNodeTokenRefs(node);
     return refs.get('borderRadius') ||
            refs.get('cornerRadius') ||
-           refs.get('radius') ||
-           this.getVariableBindingFast(node, 'cornerRadius');
+           refs.get('radius');
   }
 
   private getBorderWidthTokenFast(node: SceneNode): string | undefined {
     const refs = this.getNodeTokenRefs(node);
     return refs.get('borderWidth') ||
-           refs.get('strokeWeight') ||
-           this.getVariableBindingFast(node, 'strokeWeight');
+           refs.get('strokeWeight');
   }
 
   private getEffectTokenFast(node: SceneNode, index: number): string | undefined {
@@ -1182,31 +1177,7 @@ export class FigmaComponentServiceOptimized {
     return refs.get('boxShadow') ||
            refs.get(`effects.${index}`) ||
            refs.get(`effects[${index}]`) ||
-           refs.get('shadow') ||
-           this.getVariableBindingFast(node, 'effects');
-  }
-
-  /**
-   * Fast variable binding lookup
-   */
-  private getVariableBindingFast(node: SceneNode, property: string): string | undefined {
-    try {
-      if (!('boundVariables' in node) || !node.boundVariables) return undefined;
-      
-      const boundVars = node.boundVariables as Record<string, any>;
-      const binding = boundVars[property];
-      
-      if (binding) {
-        const bindingToCheck = Array.isArray(binding) ? binding[0] : binding;
-        if (bindingToCheck?.id) {
-          const variable = figma.variables.getVariableById(bindingToCheck.id);
-          return variable?.name;
-        }
-      }
-    } catch {
-      // Ignore errors
-    }
-    return undefined;
+           refs.get('shadow');
   }
 
   /**

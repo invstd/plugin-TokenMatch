@@ -51,44 +51,6 @@ export class FigmaComponentService {
   }
 
   /**
-   * Get Figma Variable binding for a property (modern approach)
-   * Tokens Studio can sync tokens to Figma Variables
-   */
-  private getVariableBinding(node: SceneNode, property: string): string | undefined {
-    try {
-      if (!('boundVariables' in node) || !node.boundVariables) {
-        return undefined;
-      }
-      
-      const boundVars = node.boundVariables as Record<string, any>;
-      const binding = boundVars[property];
-      
-      if (binding) {
-        // Handle array bindings (e.g., fills[0])
-        const bindingToCheck = Array.isArray(binding) ? binding[0] : binding;
-        
-        if (bindingToCheck?.id) {
-          try {
-            const variable = figma.variables.getVariableById(bindingToCheck.id);
-            if (variable?.name) {
-              // Variable names often contain the token path
-              if (this.DEBUG_LOGGING) {
-                console.log(`[Variable] ${node.name}.${property} → ${variable.name}`);
-              }
-              return variable.name;
-            }
-          } catch (e) {
-            // Variable might not be accessible
-          }
-        }
-      }
-    } catch (e) {
-      // Bound variables not available
-    }
-    return undefined;
-  }
-
-  /**
    * Clean token reference value - remove surrounding quotes that Tokens Studio may include
    */
   private cleanTokenReference(value: string): string {
@@ -184,7 +146,8 @@ export class FigmaComponentService {
       'strokes',
       `strokeColor`,
       `strokeColor[${strokeIndex}]`,
-      'borderColor'
+      'borderColor',
+      'border'  // For composite border tokens
     ];
     
     for (const key of keys) {
@@ -268,10 +231,6 @@ export class FigmaComponentService {
       if (ref) return ref;
     }
     
-    // Then try Figma Variable bindings (modern approach)
-    const variableRef = this.getVariableBinding(node, property);
-    if (variableRef) return variableRef;
-    
     return undefined;
   }
 
@@ -305,10 +264,6 @@ export class FigmaComponentService {
       }
     }
     
-    // Check Figma Variable binding for corner radius
-    const variableRef = this.getVariableBinding(node, 'cornerRadius');
-    if (variableRef) return variableRef;
-    
     return undefined;
   }
 
@@ -323,7 +278,7 @@ export class FigmaComponentService {
       'borderWidthRight',
       'borderWidthBottom',
       'borderWidthLeft',
-      'border',
+      'border',  // For composite border tokens
       'strokeWidth'
     ];
     
@@ -336,10 +291,6 @@ export class FigmaComponentService {
         return ref;
       }
     }
-    
-    // Check Figma Variable binding
-    const variableRef = this.getVariableBinding(node, 'strokeWeight');
-    if (variableRef) return variableRef;
     
     return undefined;
   }
@@ -378,10 +329,6 @@ export class FigmaComponentService {
         return ref;
       }
     }
-    
-    // Check Figma Variable binding
-    const variableRef = this.getVariableBinding(node, 'effects');
-    if (variableRef) return variableRef;
     
     return undefined;
   }
@@ -736,11 +683,12 @@ export class FigmaComponentService {
 
   /**
    * Extract color properties (fills and strokes)
+   * Now recursively scans children to find colors on nested elements
    */
-  extractColors(node: SceneNode): ColorProperty[] {
+  extractColors(node: SceneNode, includeChildren: boolean = true): ColorProperty[] {
     const colors: ColorProperty[] = [];
 
-    // Extract fills
+    // Extract fills from this node
     if ('fills' in node && Array.isArray(node.fills)) {
       for (let i = 0; i < node.fills.length; i++) {
         const fill = node.fills[i];
@@ -760,13 +708,15 @@ export class FigmaComponentService {
             hex: color.hex,
             rgba: color.rgba,
             opacity: opacity,
-            tokenReference: tokenRef
+            tokenReference: tokenRef,
+            nodeName: node.name,
+            nodeId: node.id
           });
         }
       }
     }
 
-    // Extract strokes
+    // Extract strokes from this node
     if ('strokes' in node && Array.isArray(node.strokes)) {
       for (let i = 0; i < node.strokes.length; i++) {
         const stroke = node.strokes[i];
@@ -786,8 +736,23 @@ export class FigmaComponentService {
             hex: color.hex,
             rgba: color.rgba,
             opacity: opacity,
-            tokenReference: tokenRef
+            tokenReference: tokenRef,
+            nodeName: node.name,
+            nodeId: node.id
           });
+        }
+      }
+    }
+
+    // Recursively extract colors from children
+    // This is crucial for components where strokes/fills are on nested layers
+    if (includeChildren && 'children' in node) {
+      for (const child of node.children) {
+        // Skip component instances to avoid double-counting (they have their own properties)
+        // But DO scan other children like frames, rectangles, etc.
+        if (child.type !== 'INSTANCE') {
+          const childColors = this.extractColors(child, true);
+          colors.push(...childColors);
         }
       }
     }
@@ -859,8 +824,9 @@ export class FigmaComponentService {
 
   /**
    * Extract spacing properties including border-radius and border-width
+   * Now recursively scans children to find spacing on nested elements
    */
-  extractSpacing(node: SceneNode): SpacingProperty[] {
+  extractSpacing(node: SceneNode, includeChildren: boolean = true): SpacingProperty[] {
     const spacing: SpacingProperty[] = [];
     
     // Log all token data for debugging
@@ -881,13 +847,17 @@ export class FigmaComponentService {
         type: 'width',
         value: frame.width,
         unit: 'px',
-        tokenReference: widthToken
+        tokenReference: widthToken,
+        nodeName: node.name,
+        nodeId: node.id
       });
       spacing.push({
         type: 'height',
         value: frame.height,
         unit: 'px',
-        tokenReference: heightToken
+        tokenReference: heightToken,
+        nodeName: node.name,
+        nodeId: node.id
       });
 
       // Padding (only for frames with auto-layout)
@@ -921,7 +891,9 @@ export class FigmaComponentService {
             type: 'padding',
             value: frame.paddingTop,
             unit: 'px',
-            tokenReference: getPaddingToken(paddingTopSpecific, verticalPaddingToken, 'vertical')
+            tokenReference: getPaddingToken(paddingTopSpecific, verticalPaddingToken, 'vertical'),
+            nodeName: node.name,
+            nodeId: node.id
           });
         }
         if (frame.paddingRight) {
@@ -929,7 +901,9 @@ export class FigmaComponentService {
             type: 'padding',
             value: frame.paddingRight,
             unit: 'px',
-            tokenReference: getPaddingToken(paddingRightSpecific, horizontalPaddingToken, 'horizontal')
+            tokenReference: getPaddingToken(paddingRightSpecific, horizontalPaddingToken, 'horizontal'),
+            nodeName: node.name,
+            nodeId: node.id
           });
         }
         if (frame.paddingBottom) {
@@ -937,7 +911,9 @@ export class FigmaComponentService {
             type: 'padding',
             value: frame.paddingBottom,
             unit: 'px',
-            tokenReference: getPaddingToken(paddingBottomSpecific, verticalPaddingToken, 'vertical')
+            tokenReference: getPaddingToken(paddingBottomSpecific, verticalPaddingToken, 'vertical'),
+            nodeName: node.name,
+            nodeId: node.id
           });
         }
         if (frame.paddingLeft) {
@@ -945,7 +921,9 @@ export class FigmaComponentService {
             type: 'padding',
             value: frame.paddingLeft,
             unit: 'px',
-            tokenReference: getPaddingToken(paddingLeftSpecific, horizontalPaddingToken, 'horizontal')
+            tokenReference: getPaddingToken(paddingLeftSpecific, horizontalPaddingToken, 'horizontal'),
+            nodeName: node.name,
+            nodeId: node.id
           });
         }
       }
@@ -959,7 +937,9 @@ export class FigmaComponentService {
           type: 'gap',
           value: frame.itemSpacing,
           unit: 'px',
-          tokenReference: gapToken
+          tokenReference: gapToken,
+          nodeName: node.name,
+          nodeId: node.id
         });
       }
       
@@ -970,7 +950,9 @@ export class FigmaComponentService {
           type: 'gap',
           value: frame.counterAxisSpacing as number,
           unit: 'px',
-          tokenReference: counterSpacingToken
+          tokenReference: counterSpacingToken,
+          nodeName: node.name,
+          nodeId: node.id
         });
       }
       
@@ -984,7 +966,9 @@ export class FigmaComponentService {
           type: 'borderRadius',
           value: frame.cornerRadius,
           unit: 'px',
-          tokenReference: radiusToken
+          tokenReference: radiusToken,
+          nodeName: node.name,
+          nodeId: node.id
         });
         }
         // Handle mixed/per-corner radius
@@ -995,7 +979,9 @@ export class FigmaComponentService {
               type: 'borderRadius' ,
               value: frame.topLeftRadius,
               unit: 'px',
-              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusTopLeft') || radiusToken
+              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusTopLeft') || radiusToken,
+              nodeName: node.name,
+              nodeId: node.id
             });
           }
           if ('topRightRadius' in frame && typeof frame.topRightRadius === 'number' && frame.topRightRadius > 0) {
@@ -1003,7 +989,9 @@ export class FigmaComponentService {
               type: 'borderRadius' ,
               value: frame.topRightRadius,
               unit: 'px',
-              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusTopRight') || radiusToken
+              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusTopRight') || radiusToken,
+              nodeName: node.name,
+              nodeId: node.id
             });
           }
           if ('bottomRightRadius' in frame && typeof frame.bottomRightRadius === 'number' && frame.bottomRightRadius > 0) {
@@ -1011,7 +999,9 @@ export class FigmaComponentService {
               type: 'borderRadius' ,
               value: frame.bottomRightRadius,
               unit: 'px',
-              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusBottomRight') || radiusToken
+              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusBottomRight') || radiusToken,
+              nodeName: node.name,
+              nodeId: node.id
             });
           }
           if ('bottomLeftRadius' in frame && typeof frame.bottomLeftRadius === 'number' && frame.bottomLeftRadius > 0) {
@@ -1019,7 +1009,9 @@ export class FigmaComponentService {
               type: 'borderRadius' ,
               value: frame.bottomLeftRadius,
               unit: 'px',
-              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusBottomLeft') || radiusToken
+              tokenReference: this.getSpacingTokenReference(node, 'borderRadiusBottomLeft') || radiusToken,
+              nodeName: node.name,
+              nodeId: node.id
             });
           }
         }
@@ -1032,7 +1024,9 @@ export class FigmaComponentService {
           type: 'borderWidth' ,
           value: frame.strokeWeight,
           unit: 'px',
-          tokenReference: borderWidthToken
+          tokenReference: borderWidthToken,
+          nodeName: node.name,
+          nodeId: node.id
         });
       }
     }
@@ -1046,8 +1040,50 @@ export class FigmaComponentService {
           type: 'borderRadius' ,
           value: rectNode.cornerRadius,
           unit: 'px',
-          tokenReference: radiusToken
+          tokenReference: radiusToken,
+          nodeName: node.name,
+          nodeId: node.id
         });
+      }
+      
+      // Also check stroke weight on non-frame nodes
+      if ('strokeWeight' in rectNode && typeof rectNode.strokeWeight === 'number' && rectNode.strokeWeight > 0) {
+        const borderWidthToken = this.getBorderWidthTokenReference(node);
+        spacing.push({
+          type: 'borderWidth',
+          value: rectNode.strokeWeight,
+          unit: 'px',
+          tokenReference: borderWidthToken,
+          nodeName: node.name,
+          nodeId: node.id
+        });
+      }
+    }
+    // Handle other shapes that might have stroke weight
+    else if ('strokeWeight' in node) {
+      const shapeNode = node as GeometryMixin & SceneNode;
+      if (typeof shapeNode.strokeWeight === 'number' && shapeNode.strokeWeight > 0) {
+        const borderWidthToken = this.getBorderWidthTokenReference(node);
+        spacing.push({
+          type: 'borderWidth',
+          value: shapeNode.strokeWeight,
+          unit: 'px',
+          tokenReference: borderWidthToken,
+          nodeName: node.name,
+          nodeId: node.id
+        });
+      }
+    }
+
+    // Recursively extract spacing from children
+    // This is crucial for components where borderWidth/borderRadius are on nested layers
+    if (includeChildren && 'children' in node) {
+      for (const child of node.children) {
+        // Skip component instances to avoid double-counting
+        if (child.type !== 'INSTANCE') {
+          const childSpacing = this.extractSpacing(child, true);
+          spacing.push(...childSpacing);
+        }
       }
     }
 
