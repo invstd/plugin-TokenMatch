@@ -181,6 +181,17 @@ For comprehensive documentation, see the `/documentation` folder:
 - **[Development Guide](./documentation/DEVELOPMENT.md)** - Architecture, setup, and contribution guide
 - **[API Documentation](./documentation/API.md)** - Complete API reference for all services
 
+### 🚀 Building Your Own Figma Plugin?
+
+This project includes **reusable infrastructure guides** for creating production-ready Figma plugins:
+
+- **[Quick Start Guide](./FIGMA-PLUGIN-STARTER-GUIDE.md)** - Overview of all available resources
+- **[5-Minute Setup](./documentation/FIGMA-PLUGIN-QUICK-START.md)** - Rapid template for experienced developers
+- **[Complete Setup Guide](./documentation/FIGMA-PLUGIN-INFRASTRUCTURE-SETUP.md)** - Detailed walkthrough with explanations
+- **[Cheat Sheet](./FIGMA-PLUGIN-CHEAT-SHEET.md)** - Quick reference for commands and patterns
+
+These guides cover everything from dependency installation to custom scrollbars, theming, and build configuration.
+
 ## 🤝 Contributing
 
 This is an open-source project. Issues and pull requests are welcome!

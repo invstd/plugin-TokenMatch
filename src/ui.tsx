@@ -5,7 +5,7 @@ import { on, emit } from '@create-figma-plugin/utilities';
 import '!./output.css';
 
 // Import version from package.json
-const PLUGIN_VERSION = '1.0.0';
+const PLUGIN_VERSION = '1.0.2';
 
 // Debounce utility for search optimization
 function useDebounce<T>(value: T, delay: number): T {
@@ -657,13 +657,24 @@ function Plugin() {
         {currentView === 'main' ? (
           <Stack space="medium">
             <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: '13px', fontWeight: '600' }}>Token source</Text>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                  <path d="M21 16V8C20.9996 7.64927 20.9071 7.30481 20.7315 7.00116C20.556 6.69751 20.3037 6.44536 20 6.27L13 2.27C12.696 2.09446 12.3511 2.00205 12 2.00205C11.6489 2.00205 11.304 2.09446 11 2.27L4 6.27C3.69626 6.44536 3.44398 6.69751 3.26846 7.00116C3.09294 7.30481 3.00036 7.64927 3 8V16C3.00036 16.3507 3.09294 16.6952 3.26846 16.9988C3.44398 17.3025 3.69626 17.5546 4 17.73L11 21.73C11.304 21.9055 11.6489 21.9979 12 21.9979C12.3511 21.9979 12.696 21.9055 13 21.73L20 17.73C20.3037 17.5546 20.556 17.3025 20.7315 16.9988C20.9071 16.6952 20.9996 16.3507 21 16Z" stroke="var(--figma-color-text-brand)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                </svg>
+                <Text style={{ fontSize: '13px', fontWeight: '600' }}>Token source</Text>
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Text>
                   {isConfigured ? 'Configured' : 'Not configured'}
                 </Text>
                 <button 
                   onClick={() => setCurrentView('settings')}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -674,7 +685,8 @@ function Plugin() {
                     borderRadius: '6px',
                     background: 'transparent',
                     cursor: 'pointer',
-                    color: 'var(--figma-color-text)'
+                    color: 'var(--figma-color-text)',
+                    transition: 'background-color 0.15s ease'
                   }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -836,6 +848,14 @@ function Plugin() {
               )}
             </Stack>
 
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '24px', marginBottom: '16px' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                <path d="M9 11L12 14L22 4" stroke="var(--figma-color-text-brand)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M21 12V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H16" stroke="var(--figma-color-text-brand)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <Text style={{ fontSize: '13px', fontWeight: '600' }}>Component matching</Text>
+            </div>
+
             <Stack space="small">
               <Text>Scan components</Text>
               <Dropdown
@@ -952,6 +972,12 @@ function Plugin() {
                           });
                         }}
                         secondary
+                        onMouseEnter={(e) => {
+                          (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLElement).style.backgroundColor = '';
+                        }}
                       >
                         Paste to canvas
                       </Button>
@@ -1136,6 +1162,12 @@ function Plugin() {
                               <Button 
                                 onClick={() => handleNavigateToComponent(comp.id)}
                                 secondary
+                                onMouseEnter={(e) => {
+                                  (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  (e.currentTarget as HTMLElement).style.backgroundColor = '';
+                                }}
                               >
                                 View
                               </Button>
@@ -1321,6 +1353,12 @@ function Plugin() {
               <Text style={{ fontSize: '13px', fontWeight: '600' }}>GitHub Settings</Text>
               <button 
                 onClick={() => setCurrentView('main')}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1331,7 +1369,8 @@ function Plugin() {
                   borderRadius: '6px',
                   background: 'transparent',
                   cursor: 'pointer',
-                  color: 'var(--figma-color-text)'
+                  color: 'var(--figma-color-text)',
+                  transition: 'background-color 0.15s ease'
                 }}
               >
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -1453,7 +1492,15 @@ function Plugin() {
               setTokenCount(0);
               setSampleFiles([]);
               setSettingsError(null);
-            }} secondary>
+            }} 
+            secondary
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.backgroundColor = '';
+            }}
+            >
               Clear All Data
             </Button>
             
@@ -1474,6 +1521,12 @@ function Plugin() {
                 }} 
                 secondary
                 disabled={loading}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = '';
+                }}
               >
                 Clear Cache & Refresh
               </Button>
@@ -1487,6 +1540,12 @@ function Plugin() {
               <Text style={{ fontSize: '13px', fontWeight: '600' }}>About TokenMatch</Text>
               <button 
                 onClick={() => setCurrentView('main')}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1497,7 +1556,8 @@ function Plugin() {
                   borderRadius: '6px',
                   background: 'transparent',
                   cursor: 'pointer',
-                  color: 'var(--figma-color-text)'
+                  color: 'var(--figma-color-text)',
+                  transition: 'background-color 0.15s ease'
                 }}
               >
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">

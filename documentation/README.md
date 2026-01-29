@@ -41,6 +41,10 @@ See the [Development Guide](./DEVELOPMENT.md) for:
 - **[DEVELOPMENT.md](./DEVELOPMENT.md)** - Development and architecture guide
 - **[API.md](./API.md)** - Technical API documentation
 
+### Creating New Figma Plugins
+- **[FIGMA-PLUGIN-QUICK-START.md](./FIGMA-PLUGIN-QUICK-START.md)** - 5-minute quick start template for new plugins ⚡
+- **[FIGMA-PLUGIN-INFRASTRUCTURE-SETUP.md](./FIGMA-PLUGIN-INFRASTRUCTURE-SETUP.md)** - Complete infrastructure setup guide with detailed explanations 📘
+
 ## 🔑 Key Features
 
 - ✅ Search through design tokens from your GitHub repository

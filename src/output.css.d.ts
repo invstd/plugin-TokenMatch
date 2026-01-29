@@ -67,6 +67,7 @@ declare const styles: {
   readonly "inline-flex": string;
   readonly "inset-0": string;
   readonly "invisible": string;
+  readonly "italic": string;
   readonly "items-center": string;
   readonly "items-start": string;
   readonly "justify-between": string;
@@ -96,6 +97,7 @@ declare const styles: {
   readonly "p-3": string;
   readonly "p-4": string;
   readonly "p-8": string;
+  readonly "pl-7": string;
   readonly "pt-3": string;
   readonly "pt-4": string;
   readonly "px-2": string;
@@ -117,6 +119,7 @@ declare const styles: {
   readonly "space-y-2": string;
   readonly "space-y-3": string;
   readonly "space-y-4": string;
+  readonly "space-y-6": string;
   readonly "static": string;
   readonly "table": string;
   readonly "text-2xl": string;
@@ -132,6 +135,7 @@ declare const styles: {
   readonly "text-gray-700": string;
   readonly "text-green-500": string;
   readonly "text-green-600": string;
+  readonly "text-lg": string;
   readonly "text-red-500": string;
   readonly "text-right": string;
   readonly "text-sm": string;

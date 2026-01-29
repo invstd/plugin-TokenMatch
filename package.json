@@ -1,6 +1,6 @@
 {
   "name": "figma-tokens-checker",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "A Figma plugin to connect to GitHub repositories and check design tokens",
   "scripts": {
     "build": "npm run build:css && npm run build:js",
