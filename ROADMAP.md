@@ -162,6 +162,25 @@ TokensMatch currently excels at finding components that use specific design toke
 
 ---
 
+### 10. Figma Variables Support
+
+**Goal:** Add support for Figma's native Variables as an alternative reference source, allowing users to match component properties against local Variable collections instead of external design token repositories.
+
+**Key Capabilities:**
+- Token source selection in Settings: "Variables (Local file only)" vs "Design Tokens (Repository)"
+- Read all Variable collections from the current Figma file
+- Support all variable types: Color, Number, String, Boolean
+- Handle variable modes (e.g., Light/Dark themes)
+- Resolve variable aliases/references
+- Scan components for properties bound to Variables
+- Search and filter Variables by name/path
+
+**User Value:** Enables teams using Figma's native Variables system to audit and maintain component-variable relationships without requiring external repository setup—works offline with zero configuration.
+
+**Implementation Reference:** [10-figma-variables-support.md](./roadmap/10-figma-variables-support.md)
+
+---
+
 ## Feature Dependencies
 
 ```
@@ -187,14 +206,30 @@ TokensMatch currently excels at finding components that use specific design toke
 
  ┌──────────────────────────────────────────────────────────────────┐
  │                     Token Source Enhancements                    │
- ├──────────────────────────────┬───────────────────────────────────┤
- │                              │                                   │
- │  ┌────────────────────┐      │      ┌────────────────────────┐   │
- │  │  JSON/Folder       │      │      │  Multiple Repository   │   │
- │  │  Upload (6)        │◄─────┼─────►│  Providers (7)         │   │
- │  └────────────────────┘      │      └────────────────────────┘   │
- │                              │                                   │
- │        Alternative to GitHub connection                          │
+ ├─────────────────────────────────────────────────────────────────┤
+ │                                                                  │
+ │  ┌────────────────────────────────────────────────────────────┐ │
+ │  │                    TOKEN SOURCE SELECTOR                    │ │
+ │  │        (Settings: Choose reference source type)             │ │
+ │  └───────────────────────┬────────────────────────────────────┘ │
+ │                          │                                      │
+ │         ┌────────────────┴────────────────┐                     │
+ │         ▼                                 ▼                     │
+ │  ┌──────────────────┐           ┌──────────────────────────┐   │
+ │  │ Figma Variables  │           │     Design Tokens        │   │
+ │  │ Support (10)     │           │     (Repository)         │   │
+ │  │                  │           │                          │   │
+ │  │ • Local file     │           │ ┌────────────────────┐   │   │
+ │  │ • Zero config    │           │ │ JSON/Folder        │   │   │
+ │  │ • Works offline  │           │ │ Upload (6)         │   │   │
+ │  └──────────────────┘           │ └────────────────────┘   │   │
+ │                                 │                          │   │
+ │                                 │ ┌────────────────────┐   │   │
+ │                                 │ │ Multiple Repo      │   │   │
+ │                                 │ │ Providers (7)      │   │   │
+ │                                 │ └────────────────────┘   │   │
+ │                                 └──────────────────────────┘   │
+ │                                                                  │
  └──────────────────────────────────────────────────────────────────┘
 
  ┌──────────────────────────────────────────────────────────────────┐
@@ -217,13 +252,14 @@ TokensMatch currently excels at finding components that use specific design toke
 **Recommended Implementation Order:**
 1. **Exclude Token Paths (9)** - Quick win, improves UX immediately
 2. **Pre-scan Components (8)** - Performance foundation, benefits all features
-3. **JSON/Folder Upload (6)** - Low complexity, immediate value for non-GitHub users
-4. **Multiple Repository Providers (7)** - Expands user base, pairs with feature 6
-5. **Missing Token Detector (1)** - Extends existing scanning, high user value
-6. **Unused Token Finder (2)** - Complements Missing Token Detector
-7. **Token Statistics Dashboard (3)** - Leverages data from features 1 & 2
-8. **JSON/CSV Export (4)** - Foundation for external integrations
-9. **Airtable Integration (5)** - Builds on export infrastructure
+3. **Figma Variables Support (10)** - Zero-config alternative, high demand from Variables users
+4. **JSON/Folder Upload (6)** - Low complexity, immediate value for non-GitHub users
+5. **Multiple Repository Providers (7)** - Expands user base, pairs with feature 6
+6. **Missing Token Detector (1)** - Extends existing scanning, high user value
+7. **Unused Token Finder (2)** - Complements Missing Token Detector
+8. **Token Statistics Dashboard (3)** - Leverages data from features 1 & 2
+9. **JSON/CSV Export (4)** - Foundation for external integrations
+10. **Airtable Integration (5)** - Builds on export infrastructure
 
 ---
 
@@ -263,10 +299,11 @@ All features will benefit from these common enhancements:
 |---------|----------|-------|
 | v1.x | Current | Token-to-component matching |
 | v1.2 | Features 8, 9 | Performance & filtering (pre-scan, exclusions) |
-| v1.3 | Features 6, 7 | Token source flexibility |
-| v1.4 | Features 1, 2 | Token coverage analysis |
-| v1.5 | Feature 3 | Analytics & insights |
-| v1.6 | Features 4, 5 | Export & integrations |
+| v1.3 | Feature 10 | Figma Variables support (alternative token source) |
+| v1.4 | Features 6, 7 | Token source flexibility (JSON upload, multi-provider) |
+| v1.5 | Features 1, 2 | Token coverage analysis |
+| v1.6 | Feature 3 | Analytics & insights |
+| v1.7 | Features 4, 5 | Export & integrations |
 
 ---
 
