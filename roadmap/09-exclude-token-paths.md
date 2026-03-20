@@ -1,5 +1,7 @@
 # Feature: Exclude Token Paths
 
+> **Phase 1 — Polish** | Core exclusion service (`services/exclusion-service.ts`) is already implemented with glob matching, presets, and scope configuration. Verify remaining UI integration and close if complete.
+
 ## Overview
 
 Allow users to configure token path patterns to exclude from matching results, enabling them to filter out primitive/base tokens and focus only on semantic or component-level tokens that are intended for direct use.

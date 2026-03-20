@@ -1,5 +1,7 @@
 # Feature: Missing Token Detector
 
+> **Status: Superseded** — Replaced by `11-token-linting-mode.md`. The "Find untokenized layers" lint check covers this functionality within a broader lint mode that runs parallel to Match mode. Canvas to-do list generation is planned as a future enhancement to the lint mode. This document is preserved for reference.
+
 ## Overview
 
 Find components with layers that don't have tokens assigned to them and generate actionable to-do lists that can be pasted directly on the Figma canvas.

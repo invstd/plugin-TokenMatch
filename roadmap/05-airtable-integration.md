@@ -1,5 +1,7 @@
 # Feature: Airtable Integration
 
+> **Phase 5 — Reporting** | Niche integration. Depends on export patterns established in 04.
+
 ## Overview
 
 Push token and component relationship data directly to Airtable for collaborative design system documentation, governance workflows, and accessibility to non-Figma users.

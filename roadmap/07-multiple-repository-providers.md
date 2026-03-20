@@ -1,5 +1,7 @@
 # Feature: Multiple Repository Providers
 
+> **Phase 3 — Platform Expansion** | Abstracts the token source layer. Must complete before lint value mismatch check (11b) so it builds against a stable provider interface. The "Find untokenized layers" lint check (11a) has no dependency on this and can ship independently.
+
 ## Overview
 
 Extend repository connectivity beyond GitHub to support BitBucket, GitLab, and custom Git URLs. This enables teams using different version control platforms to connect their token repositories to TokensMatch.

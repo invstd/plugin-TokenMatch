@@ -1,5 +1,7 @@
 # Feature: Pre-scan Components
 
+> **Phase 1 — Polish** | Builds on the existing optimized component service and persistent caching. Primary remaining work is the settings UX for triggering and managing pre-scans.
+
 ## Overview
 
 Allow users to pre-scan all pages for components from the settings page, creating a cached index that makes subsequent token matching significantly faster. The main UI displays scan status and offers an option to re-scan before matching.

@@ -1,5 +1,7 @@
 # Feature: JSON/Folder Upload
 
+> **Phase 2 — Remove Barriers** | Removes the GitHub requirement entirely, broadening the audience to teams using any token workflow. No external dependencies.
+
 ## Overview
 
 Allow users to upload token files directly via JSON file upload or folder selection instead of requiring a GitHub repository connection. This provides flexibility for teams who don't use GitHub or want to work with local token files.

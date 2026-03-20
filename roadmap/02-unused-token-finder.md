@@ -1,5 +1,7 @@
 # Feature: Unused Token Finder
 
+> **Phase 4 — Analysis** | Depends on solid scanning foundation from earlier phases.
+
 ## Overview
 
 Identify tokens from the design token repository that aren't referenced by any components in the Figma file, with special handling for tokens that are consumed by other tokens in semantic relationships (aliases/references).

@@ -1,265 +1,208 @@
-# TokensMatch Plugin Roadmap
+# TokenMatch Plugin Roadmap
 
-This document outlines planned features for future updates to the TokensMatch Figma plugin. Each feature has a detailed implementation reference document in the `/roadmap` directory.
+This document outlines planned features for future updates to the TokenMatch Figma plugin. Each feature has a detailed implementation reference document in the `/roadmap` directory.
 
 ## Overview
 
-TokensMatch currently excels at finding components that use specific design tokens. The planned features expand this capability to provide comprehensive token governance, coverage analysis, and export functionality for design system documentation.
+TokenMatch currently excels at finding components that use specific design tokens (Match mode). The planned features expand this with a parallel Lint mode for validating token correctness, broader token source support, and reporting capabilities for design system governance.
+
+---
+
+## Implementation Phases
+
+| Phase | Focus | Features |
+|-------|-------|----------|
+| **1 — Polish** | Finish & verify existing foundation | 09 (Exclude Token Paths), 08 (Pre-scan Components) |
+| **2 — Remove Barriers** | Enable usage without a repository | 06 (JSON/Folder Upload), 11a (Lint: untokenized layers) |
+| **3 — Platform Expansion** | Broaden token sources & complete linting | 07 (Multi-Provider), 11b (Lint: value mismatch), 10 (Figma Variables) |
+| **4 — Analysis** | Reverse analysis & discovery | 02 (Unused Token Finder) |
+| **5 — Reporting** | Export & external integrations | 04 (JSON/CSV Export), 03 (Token Statistics), 05 (Airtable) |
 
 ---
 
 ## Planned Features
 
-### 1. Missing Token Detector
+### ~~1. Missing Token Detector~~ — Superseded
 
-**Goal:** Find components with layers that have explicit values instead of token references, helping teams identify where design tokens should be applied but aren't.
-
-**Key Capabilities:**
-- Scan components for properties without token assignments
-- Generate actionable to-do lists pasted directly on the Figma canvas
-- "Paste All" option to create checklists next to all component containers across a file
-- Filter by property type (colors, spacing, typography, effects)
-
-**User Value:** Helps maintain design token coverage and consistency across a design system.
-
-**Implementation Reference:** [01-missing-token-detector.md](./roadmap/01-missing-token-detector.md)
+> Replaced by item 11 (Token Linting Mode). The "Find untokenized layers" lint check covers this functionality within a broader lint mode. Canvas to-do list generation is planned as a future enhancement to the lint mode. See [01-missing-token-detector.md](./roadmap/01-missing-token-detector.md) for the original spec.
 
 ---
 
-### 2. Unused Token Finder
+### 2. Unused Token Finder — Phase 4
 
 **Goal:** Identify tokens from the repository that aren't referenced by any components, distinguishing between truly orphaned tokens and those consumed by other tokens in semantic relationships.
 
 **Key Capabilities:**
 - Compare all repository tokens against component token references
-- Highlight unused tokens with categorization:
-  - Orphaned (not used anywhere)
-  - Semantic-only (consumed by other tokens, not directly by components)
-  - Potentially deprecated candidates
-- Support alias/reference chain analysis
-
-**User Value:** Helps teams identify token bloat and clean up unused design decisions.
+- Categorize: orphaned, semantic-only, deprecated candidates
+- Alias/reference chain analysis
 
 **Implementation Reference:** [02-unused-token-finder.md](./roadmap/02-unused-token-finder.md)
 
 ---
 
-### 3. Token Statistics Dashboard
+### 3. Token Statistics Dashboard — Phase 5
 
-**Goal:** Provide analytics on token usage patterns across the design system, helping teams understand adoption and identify optimization opportunities.
+**Goal:** Provide analytics on token usage patterns across the design system.
 
 **Key Capabilities:**
 - Most/least used tokens ranking
-- Components with highest token coverage
-- Token distribution by type (color, spacing, typography, etc.)
-- Coverage percentage across the file
-- Token usage trends per page
-
-**User Value:** Data-driven insights for design system governance and optimization.
+- Component token coverage metrics
+- Distribution by type, page, and concentration
 
 **Implementation Reference:** [03-token-statistics.md](./roadmap/03-token-statistics.md)
 
 ---
 
-### 4. JSON/CSV Export
+### 4. JSON/CSV Export — Phase 5
 
-**Goal:** Generate downloadable files documenting the relationships between tokens and components for external documentation, auditing, or integration with other tools.
+**Goal:** Generate downloadable files documenting token-component relationships for external use.
 
 **Key Capabilities:**
-- Export token-to-component relationships as structured JSON
-- Export as CSV for spreadsheet analysis
-- Customizable export schemas
-- Include metadata (confidence scores, property types, component paths)
-
-**User Value:** Enables documentation generation, external tool integration, and offline analysis.
+- Structured JSON and flattened CSV export
+- Customizable schemas with metadata (confidence, property types)
+- Foundation for Airtable integration (05)
 
 **Implementation Reference:** [04-json-csv-export.md](./roadmap/04-json-csv-export.md)
 
 ---
 
-### 5. Airtable Integration
+### 5. Airtable Integration — Phase 5
 
-**Goal:** Push token and component relationship data directly to Airtable for collaborative design system documentation and governance workflows.
+**Goal:** Push token-component data to Airtable for collaborative governance workflows.
 
 **Key Capabilities:**
-- "Paste to Airtable" flow with guided setup
-- Create/update records in existing Airtable bases
-- Map token/component data to custom Airtable schemas
-- Sync functionality to keep Airtable current with Figma
+- Guided "Paste to Airtable" setup
+- Create/update/sync records
+- Custom field mappings
 
-**User Value:** Enables collaborative design system governance using familiar tools, with data accessible to non-Figma users.
+**Depends on:** 04 (JSON/CSV Export) for shared export patterns.
 
 **Implementation Reference:** [05-airtable-integration.md](./roadmap/05-airtable-integration.md)
 
 ---
 
-### 6. JSON/Folder Upload
+### 6. JSON/Folder Upload — Phase 2
 
-**Goal:** Allow users to upload token files directly via JSON file upload or folder selection instead of requiring a GitHub repository connection.
+**Goal:** Allow direct token file upload without requiring a repository connection.
 
 **Key Capabilities:**
-- Single JSON file upload via file picker or drag-and-drop
-- Paste JSON content directly into a text area
-- Folder upload with recursive scanning of nested directories
+- File picker, drag-and-drop, or paste JSON directly
+- Folder upload with recursive scanning
 - Auto-detection of token formats (Style Dictionary, Tokens Studio, W3C DTCG)
-- Token persistence in plugin storage for session continuity
+- Session persistence in plugin storage
 
-**User Value:** Provides flexibility for teams who don't use GitHub or want to work with local token files without repository setup.
+**User Value:** Removes the biggest adoption barrier — teams can use TokenMatch without any repository setup.
 
 **Implementation Reference:** [06-json-folder-upload.md](./roadmap/06-json-folder-upload.md)
 
 ---
 
-### 7. Multiple Repository Providers
+### 7. Multiple Repository Providers — Phase 3
 
-**Goal:** Extend repository connectivity beyond GitHub to support BitBucket, GitLab, and custom Git URLs, enabling teams on different platforms to use TokensMatch.
+**Goal:** Extend connectivity beyond GitHub to GitLab, BitBucket, and custom Git URLs.
 
 **Key Capabilities:**
-- Support for GitHub, GitLab (Cloud and Self-Managed), BitBucket (Cloud and Server)
-- Custom Git URL support for self-hosted or alternative Git providers
-- Multiple authentication methods: OAuth, Personal Access Tokens, App Passwords
-- Repository browsing, branch selection, and file path navigation
-- Provider-specific features (workspaces, groups, organizations)
+- Provider abstraction layer with normalized API
+- GitHub, GitLab (Cloud + Self-Managed), BitBucket (Cloud + Server), custom URLs
+- Multiple auth methods: OAuth, PAT, App Passwords
 
-**User Value:** Removes GitHub dependency, allowing teams using any Git platform to connect their token repositories.
+**Dependency note:** Must complete before lint value mismatch check (11b) so it builds against a stable provider interface.
 
 **Implementation Reference:** [07-multiple-repository-providers.md](./roadmap/07-multiple-repository-providers.md)
 
 ---
 
-### 8. Pre-scan Components
+### 8. Pre-scan Components — Phase 1
 
-**Goal:** Allow users to pre-scan all pages for components from the settings page, creating a cached index that makes subsequent token matching significantly faster.
+**Goal:** Settings-driven component pre-scanning for faster subsequent matching.
 
 **Key Capabilities:**
 - "Scan All Pages" button in settings with progress indicator
-- Cache scanned component data in plugin storage
-- Display "Last scanned: [timestamp]" below Match button when cache exists
-- "Re-scan components before matching" checkbox option
-- Smart cache invalidation when file structure changes
-- Background scanning that doesn't block the UI
+- Persistent cache with smart invalidation
+- "Last scanned" indicator and optional re-scan before matching
 
-**User Value:** Dramatically improves matching speed for large files by eliminating repeated full scans, providing a near-instant matching experience.
+**Note:** The optimized component service with persistent caching already exists. Primary remaining work is the settings UX.
 
 **Implementation Reference:** [08-prescan-components.md](./roadmap/08-prescan-components.md)
 
 ---
 
-### 9. Exclude Token Paths
+### 9. Exclude Token Paths — Phase 1
 
-**Goal:** Allow users to configure token path patterns to exclude from matching results, enabling them to filter out primitive/base tokens and focus on semantic tokens intended for direct use.
+**Goal:** Filter out primitive/base tokens via configurable glob patterns.
 
 **Key Capabilities:**
-- Define glob-style exclusion patterns (e.g., `primitives.**`, `core.*`, `*.base.**`)
-- Quick presets for common token architectures (Primitives, Internal, Deprecated)
-- Real-time pattern testing with match preview
-- Toggle to show/hide excluded tokens in the UI
-- Transparent indicator showing excluded token count
+- Glob-style exclusion patterns
+- Quick presets (Primitives, Internal, Deprecated)
+- Real-time pattern testing and transparent excluded count
 
-**User Value:** Reduces noise by hiding primitive tokens that shouldn't be used directly, helping designers focus on semantic tokens intended for component use.
+**Note:** Core exclusion service is already implemented (`services/exclusion-service.ts`). Verify remaining UI integration and close if complete.
 
 **Implementation Reference:** [09-exclude-token-paths.md](./roadmap/09-exclude-token-paths.md)
 
 ---
 
-### 10. Figma Variables Support
+### 10. Figma Variables Support — Phase 3
 
-**Goal:** Add support for Figma's native Variables as an alternative reference source, allowing users to match component properties against local Variable collections instead of external design token repositories.
+**Goal:** Use Figma's native Variables as an alternative token source with zero external setup.
 
 **Key Capabilities:**
-- Token source selection in Settings: "Variables (Local file only)" vs "Design Tokens (Repository)"
-- Read all Variable collections from the current Figma file
-- Support all variable types: Color, Number, String, Boolean
-- Handle variable modes (e.g., Light/Dark themes)
-- Resolve variable aliases/references
-- Scan components for properties bound to Variables
-- Search and filter Variables by name/path
-
-**User Value:** Enables teams using Figma's native Variables system to audit and maintain component-variable relationships without requiring external repository setup—works offline with zero configuration.
+- Token source selector: Variables (local) vs. Design Tokens (repository)
+- Read all Variable collections, types, and modes
+- Resolve variable aliases and scan component bindings
 
 **Implementation Reference:** [10-figma-variables-support.md](./roadmap/10-figma-variables-support.md)
+
+---
+
+### 11. Token Linting Mode — Phase 2/3
+
+**Goal:** Add a dedicated Lint mode parallel to Match, accessible via a toggle tab bar. Validates token correctness rather than finding token usage.
+
+**Key Capabilities:**
+- **Phase 2 (11a):** Mode toggle UI + "Find untokenized layers" check — no repo dependency
+- **Phase 3 (11b):** "Find token value mismatches" check — requires provider abstraction (07)
+- Results grouped by page/component with expandable detail
+- Navigate to offending layer + recommendation per issue
+
+**Depends on:** 07 (Multi-Provider) for value mismatch check only. Untokenized layers check is independent.
+
+**Prior art:** Adapted from FigmaCWC's token validation pipeline (untokenized-detector, value-mismatch-detector).
+
+**Implementation Reference:** [11-token-linting-mode.md](./roadmap/11-token-linting-mode.md)
 
 ---
 
 ## Feature Dependencies
 
 ```
-                         ┌─────────────────────┐
-                         │  Token Statistics   │
-                         │    Dashboard (3)    │
-                         └─────────┬───────────┘
-                                   │ depends on
-        ┌──────────────────────────┼──────────────────────────┐
-        │                          │                          │
-        ▼                          ▼                          ▼
-┌───────────────┐        ┌─────────────────┐        ┌─────────────────┐
-│ Missing Token │        │   Unused Token  │        │     JSON/CSV    │
-│ Detector (1)  │        │    Finder (2)   │        │    Export (4)   │
-└───────────────┘        └─────────────────┘        └────────┬────────┘
-                                                             │
-                                                             │ extends
-                                                             ▼
-                                                    ┌─────────────────┐
-                                                    │     Airtable    │
-                                                    │ Integration (5) │
-                                                    └─────────────────┘
-
- ┌──────────────────────────────────────────────────────────────────┐
- │                     Token Source Enhancements                    │
- ├──────────────────────────────────────────────────────────────────┤
- │                                                                  │
- │  ┌────────────────────────────────────────────────────────────┐  │
- │  │                    TOKEN SOURCE SELECTOR                   │  │
- │  │        (Settings: Choose reference source type)            │  │
- │  └───────────────────────┬────────────────────────────────────┘  │
- │                          │                                       │
- │         ┌────────────────┴────────────────┐                      │
- │         ▼                                 ▼                      │
- │  ┌──────────────────┐           ┌──────────────────────────┐     │
- │  │ Figma Variables  │           │     Design Tokens        │     │
- │  │ Support (10)     │           │     (Repository)         │     │
- │  │                  │           │                          │     │
- │  │ • Local file     │           │ ┌────────────────────┐   │     │
- │  │ • Zero config    │           │ │ JSON/Folder        │   │     │
- │  │ • Works offline  │           │ │ Upload (6)         │   │     │
- │  └──────────────────┘           │ └────────────────────┘   │     │
- │                                 │                          │     │
- │                                 │ ┌────────────────────┐   │     │
- │                                 │ │ Multiple Repo      │   │     │
- │                                 │ │ Providers (7)      │   │     │
- │                                 │ └────────────────────┘   │     │
- │                                 └──────────────────────────┘     │
- │                                                                  │
- └──────────────────────────────────────────────────────────────────┘
-
- ┌──────────────────────────────────────────────────────────────────┐
- │                     Performance & Filtering                      │
- ├──────────────────────────────┬───────────────────────────────────┤
- │                              │                                   │
- │  ┌────────────────────┐      │      ┌────────────────────────┐   │
- │  │  Pre-scan          │      │      │  Exclude Token         │   │
- │  │  Components (8)    │      │      │  Paths (9)             │   │
- │  └────────────────────┘      │      └────────────────────────┘   │
- │          │                   │                 │                 │
- │          ▼                   │                 ▼                 │
- │   Faster matching            │         Cleaner results           │
- │   operations                 │         (hide primitives)         │
- │                              │                                   │
- │        Improves core matching experience                         │
- └──────────────────────────────────────────────────────────────────┘
+Phase 1: Polish
+  09 Exclude Token Paths ──── verify if already complete
+  08 Pre-scan Components ──── settings UX on existing cache
+        │
+Phase 2: Remove Barriers
+  06 JSON/Folder Upload ───── no repo needed
+  11a Lint: Untokenized ───── no repo needed, mode toggle UI
+        │
+Phase 3: Platform Expansion
+  07 Multi-Provider ─────┬─── provider abstraction
+  11b Lint: Value Mismatch│── builds on 07
+  10 Figma Variables ─────┘── alternative native source
+        │
+Phase 4: Analysis
+  02 Unused Token Finder ──── reverse analysis
+        │
+Phase 5: Reporting
+  04 JSON/CSV Export ─────┬── export foundation
+  03 Token Statistics ────┤── analytics layer
+  05 Airtable Integration ┘── builds on 04
 ```
 
-**Recommended Implementation Order:**
-1. **Exclude Token Paths (9)** - Quick win, improves UX immediately
-2. **Pre-scan Components (8)** - Performance foundation, benefits all features
-3. **Figma Variables Support (10)** - Zero-config alternative, high demand from Variables users
-4. **JSON/Folder Upload (6)** - Low complexity, immediate value for non-GitHub users
-5. **Multiple Repository Providers (7)** - Expands user base, pairs with feature 6
-6. **Missing Token Detector (1)** - Extends existing scanning, high user value
-7. **Unused Token Finder (2)** - Complements Missing Token Detector
-8. **Token Statistics Dashboard (3)** - Leverages data from features 1 & 2
-9. **JSON/CSV Export (4)** - Foundation for external integrations
-10. **Airtable Integration (5)** - Builds on export infrastructure
+**Key dependency chains:**
+- `07 → 11b`: Provider abstraction must be stable before lint value mismatch check
+- `04 → 05`: Airtable integration builds on export patterns from JSON/CSV export
+- `01 → 11`: Missing Token Detector superseded by Lint Mode's untokenized layers check
 
 ---
 
@@ -267,26 +210,25 @@ TokensMatch currently excels at finding components that use specific design toke
 
 ### Shared Infrastructure Needs
 
-All features will benefit from these common enhancements:
-
-1. **Extended Component Scanning**
-   - Current scanner already extracts properties with/without token references
-   - Need to expose "missing token" data in results
+1. **Provider Abstraction (Phase 3)**
+   - Normalize token fetching across GitHub, GitLab, BitBucket, custom URLs
+   - Consumed by Match mode, Lint mode (value mismatch), and future analysis features
 
 2. **Token Usage Index**
-   - Build reverse index: token path → components using it
-   - Enables both unused detection and statistics
+   - Reverse index: token path → components using it
+   - Enables unused token detection (02) and statistics (03)
 
 3. **Export Service Layer**
    - Abstract data transformation for multiple output formats
-   - Shared between JSON/CSV export and Airtable integration
+   - Shared between JSON/CSV export (04) and Airtable integration (05)
 
-4. **UI Framework Extensions**
-   - New view types for statistics dashboard
-   - Canvas interaction utilities for pasting to-do lists
+4. **Mode Toggle Architecture (Phase 2)**
+   - Match and Lint as parallel modes with independent state
+   - Shared component scanning and caching layer underneath
 
 ### Performance Considerations
 
+- Lint mode reuses the same component cache as Match mode — no duplicate scans
 - Statistics calculations should use existing scan cache
 - Export operations should be non-blocking with progress indication
 - Airtable sync should batch API calls to respect rate limits
@@ -295,22 +237,20 @@ All features will benefit from these common enhancements:
 
 ## Version Planning
 
-| Version | Features | Focus |
-|---------|----------|-------|
-| v1.x | Current | Token-to-component matching |
-| v1.2 | Features 8, 9 | Performance & filtering (pre-scan, exclusions) |
-| v1.3 | Feature 10 | Figma Variables support (alternative token source) |
-| v1.4 | Features 6, 7 | Token source flexibility (JSON upload, multi-provider) |
-| v1.5 | Features 1, 2 | Token coverage analysis |
-| v1.6 | Feature 3 | Analytics & insights |
-| v1.7 | Features 4, 5 | Export & integrations |
+| Version | Phase | Features | Focus |
+|---------|-------|----------|-------|
+| v1.2 | 1 | 09, 08 | Polish: exclusions (verify), pre-scan UX |
+| v1.3 | 2 | 06, 11a | Remove barriers: JSON upload, lint mode + untokenized check |
+| v1.4 | 3 | 07, 11b, 10 | Platform expansion: multi-provider, lint value mismatch, Figma Variables |
+| v1.5 | 4 | 02 | Analysis: unused token finder |
+| v1.6 | 5 | 04, 03, 05 | Reporting: export, statistics, Airtable |
 
 ---
 
 ## Contributing
 
 Each feature document includes:
-- Detailed specifications
+- Detailed specifications with phase tag and dependencies
 - Implementation approach
 - File modifications required
 - UI/UX considerations

@@ -1,5 +1,7 @@
 # Feature: JSON/CSV Export
 
+> **Phase 5 — Reporting** | Foundation for external data sharing. Should precede Airtable integration (05).
+
 ## Overview
 
 Generate downloadable files documenting the relationships between tokens and components for external documentation, auditing, integration with other tools, or offline analysis.

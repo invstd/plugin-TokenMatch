@@ -1,5 +1,7 @@
 # Feature: Figma Variables Support
 
+> **Phase 3 — Platform Expansion** | Alternative native token source that requires no external repository. Can be built alongside or after 07 (provider abstraction).
+
 ## Overview
 
 Add support for Figma's native Variables as an alternative reference source for token matching. Instead of connecting to external design token repositories, users can use their local Figma Variables collections to identify which variables are assigned to component properties.

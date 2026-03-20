@@ -1,5 +1,7 @@
 # Feature: Token Statistics Dashboard
 
+> **Phase 5 — Reporting** | Benefits from scan data matured through earlier phases.
+
 ## Overview
 
 Provide comprehensive analytics on token usage patterns across the design system, helping teams understand adoption, identify optimization opportunities, and make data-driven decisions about their design tokens.
