@@ -1,4 +1,4 @@
-import { render, Button, Textbox, Dropdown, IconButton, Text, Stack, Container, Inline, VerticalSpace, Muted, Checkbox } from '@create-figma-plugin/ui';
+import { render, Button, Textbox, Dropdown, IconButton, Text, Stack, Container, Inline, VerticalSpace, Muted, Checkbox, SegmentedControl } from '@create-figma-plugin/ui';
 import { h } from 'preact';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'preact/hooks';
 import { on, emit } from '@create-figma-plugin/utilities';
@@ -136,11 +136,26 @@ const RESULTS_INCREMENT = 20; // Load 20 more when scrolling
 
 function Plugin() {
   const [currentView, setCurrentView] = useState<'main' | 'settings' | 'info'>('main');
+  const [sourceCategory, setSourceCategory] = useState<'git' | 'npm' | 'url' | 'json'>('git');
+  const [gitProvider, setGitProvider] = useState<'github' | 'gitlab' | 'bitbucket'>('github');
   const [repoUrl, setRepoUrl] = useState('');
   const [token, setToken] = useState('');
   const [filePath, setFilePath] = useState('');
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [savedBranch, setSavedBranch] = useState<string | null>(null); // Store config branch separately
+  // Additional source-specific state
+  const [instanceUrl, setInstanceUrl] = useState('');       // GitLab/BitBucket self-hosted
+  const [username, setUsername] = useState('');              // BitBucket username
+  const [sourceUrl, setSourceUrl] = useState('');            // URL source
+  const [urlAuthName, setUrlAuthName] = useState('');        // URL auth header name
+  const [urlAuthValue, setUrlAuthValue] = useState('');      // URL auth header value
+  const [npmPackage, setNpmPackage] = useState('');          // npm package name
+  const [npmVersion, setNpmVersion] = useState('latest');    // npm version/tag
+  const [npmFilePattern, setNpmFilePattern] = useState('');  // npm file pattern filter
+  const [jsonInput, setJsonInput] = useState('');            // JSON paste input
+  // Derived source type from category + git provider
+  const sourceType = sourceCategory === 'git' ? gitProvider : sourceCategory;
+  const isGitSource = sourceCategory === 'git';
   const [branches, setBranches] = useState<string[]>([]);
   const [fetchedTokens, setFetchedTokens] = useState<any[]>([]);
   const [selectedToken, setSelectedToken] = useState<any | null>(null);
@@ -184,6 +199,9 @@ function Plugin() {
   const [exclusionPreview, setExclusionPreview] = useState<{ totalTokens: number; excludedCount: number } | null>(null);
   const [newExclusionPattern, setNewExclusionPattern] = useState('');
   const [patternTestResult, setPatternTestResult] = useState<{ matchCount: number; sampleMatches: string[] } | null>(null);
+  // Source integration test results
+  const [sourceTestResults, setSourceTestResults] = useState<any>(null);
+  const [sourceTestRunning, setSourceTestRunning] = useState(false);
   
   // Debounced token search (300ms delay)
   const debouncedTokenSearch = useDebounce(tokenSearch, 300);
@@ -194,6 +212,16 @@ function Plugin() {
   const filePathRef = useRef(filePath);
   const selectedBranchRef = useRef(selectedBranch);
   const savedBranchRef = useRef(savedBranch);
+  const sourceTypeRef = useRef(sourceType as string);
+  const instanceUrlRef = useRef(instanceUrl);
+  const usernameRef = useRef(username);
+  const sourceUrlRef = useRef(sourceUrl);
+  const urlAuthNameRef = useRef(urlAuthName);
+  const urlAuthValueRef = useRef(urlAuthValue);
+  const npmPackageRef = useRef(npmPackage);
+  const npmVersionRef = useRef(npmVersion);
+  const npmFilePatternRef = useRef(npmFilePattern);
+  const jsonInputRef = useRef(jsonInput);
 
   // Keep refs in sync with state
   useEffect(() => { repoUrlRef.current = repoUrl; }, [repoUrl]);
@@ -201,6 +229,16 @@ function Plugin() {
   useEffect(() => { filePathRef.current = filePath; }, [filePath]);
   useEffect(() => { selectedBranchRef.current = selectedBranch; }, [selectedBranch]);
   useEffect(() => { savedBranchRef.current = savedBranch; }, [savedBranch]);
+  useEffect(() => { sourceTypeRef.current = sourceType; }, [sourceType]);
+  useEffect(() => { instanceUrlRef.current = instanceUrl; }, [instanceUrl]);
+  useEffect(() => { usernameRef.current = username; }, [username]);
+  useEffect(() => { sourceUrlRef.current = sourceUrl; }, [sourceUrl]);
+  useEffect(() => { urlAuthNameRef.current = urlAuthName; }, [urlAuthName]);
+  useEffect(() => { urlAuthValueRef.current = urlAuthValue; }, [urlAuthValue]);
+  useEffect(() => { npmPackageRef.current = npmPackage; }, [npmPackage]);
+  useEffect(() => { npmVersionRef.current = npmVersion; }, [npmVersion]);
+  useEffect(() => { npmFilePatternRef.current = npmFilePattern; }, [npmFilePattern]);
+  useEffect(() => { jsonInputRef.current = jsonInput; }, [jsonInput]);
 
   useEffect(() => {
     // Load any saved config (fields stay empty until user acts)
@@ -237,18 +275,53 @@ function Plugin() {
 
     on('config-loaded', (config: any) => {
       if (config) {
-        // Populate fields from stored config (but do NOT auto-fetch anything)
-        setRepoUrl(config.repoUrl || '');
-        setToken(config.token || '');
-        setFilePath(config.filePath || '');
+        const type = config.type || 'github';
+        if (type === 'github' || type === 'gitlab' || type === 'bitbucket') {
+          setSourceCategory('git');
+          setGitProvider(type);
+        } else {
+          setSourceCategory(type);
+        }
+
+        // Populate source-specific fields
+        if (type === 'github') {
+          setRepoUrl(config.repoUrl || '');
+          setToken(config.token || '');
+          setFilePath(config.directoryPath || config.filePath || '');
+        } else if (type === 'gitlab') {
+          setRepoUrl(config.projectUrl || '');
+          setToken(config.token || '');
+          setInstanceUrl(config.instanceUrl || '');
+          setFilePath(config.directoryPath || '');
+        } else if (type === 'bitbucket') {
+          setRepoUrl(config.repoUrl || '');
+          setUsername(config.username || '');
+          setToken(config.appPassword || '');
+          setInstanceUrl(config.instanceUrl || '');
+          setFilePath(config.directoryPath || '');
+        } else if (type === 'url') {
+          setSourceUrl(config.url || '');
+          setUrlAuthName(config.authHeaderName || '');
+          setUrlAuthValue(config.authHeaderValue || '');
+        } else if (type === 'npm') {
+          setNpmPackage(config.packageName || '');
+          setNpmVersion(config.version || 'latest');
+          setFilePath(config.directoryPath || '');
+          setNpmFilePattern(config.filePattern || '');
+          setToken(config.registryToken || '');
+        }
 
         if (config.branch) {
           setSavedBranch(config.branch);
           setSelectedBranch(config.branch);
         }
 
-        // Update configured status only
         updateConfigStatus(config);
+
+        // Auto-fetch tokens for non-git sources on config load
+        if (type !== 'github' && type !== 'gitlab' && type !== 'bitbucket') {
+          emit('fetch-tokens', config);
+        }
       }
     });
 
@@ -279,16 +352,33 @@ function Plugin() {
           (currentSavedBranch && newBranches.includes(currentSavedBranch)) ? currentSavedBranch :
           newBranches[0] || null;
 
-        if (branchToUse) {
+        const st = sourceTypeRef.current;
+        const isGit = st === 'github' || st === 'gitlab' || st === 'bitbucket';
+
+        if (isGit && branchToUse) {
           setSelectedBranch(branchToUse);
           setLoading(true);
-          // Use refs to get current repoUrl, token, filePath values
-          emit('fetch-tokens', { 
-            repoUrl: repoUrlRef.current, 
-            token: tokenRef.current, 
-            branch: branchToUse, 
-            filePath: filePathRef.current || '' 
-          });
+          const fetchConfig: any = st === 'gitlab'
+            ? { type: 'gitlab', projectUrl: repoUrlRef.current, instanceUrl: instanceUrlRef.current || '', token: tokenRef.current, branch: branchToUse, directoryPath: filePathRef.current || '' }
+            : st === 'bitbucket'
+            ? { type: 'bitbucket', repoUrl: repoUrlRef.current, instanceUrl: instanceUrlRef.current || '', username: usernameRef.current, appPassword: tokenRef.current, branch: branchToUse, directoryPath: filePathRef.current || '' }
+            : { type: 'github', repoUrl: repoUrlRef.current, token: tokenRef.current, branch: branchToUse, directoryPath: filePathRef.current || '' };
+          emit('fetch-tokens', fetchConfig);
+        } else if (!isGit) {
+          // Non-git sources: fetch tokens immediately after successful connection
+          setLoading(true);
+          const fetchConfig: any = st === 'npm'
+            ? { type: 'npm', packageName: npmPackageRef.current, version: npmVersionRef.current || 'latest', directoryPath: filePathRef.current || '', filePattern: npmFilePatternRef.current || undefined }
+            : st === 'url'
+            ? { type: 'url', url: sourceUrlRef.current, authHeaderName: urlAuthNameRef.current || undefined, authHeaderValue: urlAuthValueRef.current || undefined }
+            : st === 'json'
+            ? { type: 'json', files: [{ name: 'tokens.json', content: jsonInputRef.current }] }
+            : null;
+          if (fetchConfig) {
+            fetchConfig.forceRefresh = true;
+            emit('fetch-tokens', fetchConfig);
+          }
+          else setLoading(false);
         } else {
           setLoading(false);
         }
@@ -424,6 +514,11 @@ function Plugin() {
       }
     });
 
+    on('source-test-results', (msg: any) => {
+      setSourceTestResults(msg);
+      setSourceTestRunning(false);
+    });
+
     on('create-collection-result', (msg: any) => {
       if (msg.success) {
         setToast(`Created collection with ${msg.count} component${msg.count !== 1 ? 's' : ''}`);
@@ -452,45 +547,103 @@ function Plugin() {
   }, []);
 
   const updateConfigStatus = (config: any) => {
-    const hasAll = config?.repoUrl && config?.token && config?.branch;
-    setIsConfigured(!!hasAll);
+    if (!config || !config.type) {
+      // Legacy format
+      setIsConfigured(!!(config?.repoUrl && config?.token && config?.branch));
+      return;
+    }
+    switch (config.type) {
+      case 'github':
+      case 'gitlab':
+      case 'bitbucket':
+        setIsConfigured(!!(config.branch && config.token));
+        break;
+      case 'npm':
+        setIsConfigured(!!config.packageName);
+        break;
+      case 'url':
+        setIsConfigured(!!config.url);
+        break;
+      case 'json':
+        setIsConfigured(!!(config.files?.length > 0));
+        break;
+      default:
+        setIsConfigured(false);
+    }
   };
 
   // Make sure updateConfigStatus is available when useEffect runs
   useEffect(() => {
-    if (repoUrl && token && selectedBranch) {
-      setIsConfigured(true);
-    } else {
-      setIsConfigured(false);
+    const configured = isGitSource
+      ? !!(repoUrl && token && selectedBranch)
+      : sourceCategory === 'url'
+      ? !!sourceUrl
+      : sourceCategory === 'npm'
+      ? !!npmPackage
+      : sourceCategory === 'json'
+      ? !!jsonInput.trim()
+      : false;
+    setIsConfigured(configured);
+  }, [repoUrl, token, selectedBranch, sourceCategory, gitProvider, sourceUrl, npmPackage, jsonInput]);
+
+  const buildSourceConfig = (): any => {
+    switch (sourceType) {
+      case 'github':
+        return { type: 'github', repoUrl, token, branch: selectedBranch || '', directoryPath: filePath || '' };
+      case 'gitlab':
+        return { type: 'gitlab', projectUrl: repoUrl, instanceUrl: instanceUrl || '', token, branch: selectedBranch || '', directoryPath: filePath || '' };
+      case 'bitbucket':
+        return { type: 'bitbucket', repoUrl, instanceUrl: instanceUrl || '', username, appPassword: token, branch: selectedBranch || '', directoryPath: filePath || '' };
+      case 'url':
+        return { type: 'url', url: sourceUrl, authHeaderName: urlAuthName || undefined, authHeaderValue: urlAuthValue || undefined };
+      case 'npm':
+        return { type: 'npm', packageName: npmPackage, version: npmVersion || 'latest', directoryPath: filePath || '', filePattern: npmFilePattern || undefined, registryToken: token || undefined };
+      case 'json':
+        return { type: 'json', files: [{ name: 'tokens.json', content: jsonInput }] };
     }
-  }, [repoUrl, token, selectedBranch]);
+  };
 
   const handleTestConnection = () => {
-    if (!repoUrl || !token) {
+    if (isGitSource && (!repoUrl || !token)) {
       setSettingsError('Please fill in Repository URL and Token');
       return;
+    }
+    if (sourceType === 'url' && !sourceUrl) {
+      setSettingsError('Please enter a URL');
+      return;
+    }
+    if (sourceType === 'npm' && !npmPackage) {
+      setSettingsError('Please enter a package name');
+      return;
+    }
+    if (sourceType === 'json') {
+      if (!jsonInput.trim()) {
+        setSettingsError('Please paste JSON content');
+        return;
+      }
+      try { JSON.parse(jsonInput); } catch {
+        setSettingsError('Invalid JSON');
+        return;
+      }
     }
     setLoading(true);
     setLoadingMessage('Scanning...');
     setError(null);
     setSettingsError(null);
-    emit('test-connection', { repoUrl, token, filePath: filePath || '' });
+    emit('test-connection', buildSourceConfig());
   };
 
   const handleSaveConfig = () => {
-    if (!repoUrl || !token || !selectedBranch) {
-      setSettingsError('Please fill in Repository URL, Token, and test the connection first');
+    if (isGitSource && (!repoUrl || !token || !selectedBranch)) {
+      setSettingsError('Please fill in all fields and test the connection first');
       return;
     }
-    // Immediately switch to main view for better UX
     setCurrentView('main');
     setIsConfigured(true);
     setSettingsError(null);
-    // Show success toast
     setToast('Configuration saved');
     setTimeout(() => setToast(null), 3000);
-    // Save config in background
-    emit('save-config', { repoUrl, token, branch: selectedBranch, filePath: filePath || '' });
+    emit('save-config', buildSourceConfig());
   };
 
   const handleBranchSelect = (branch: string) => {
@@ -499,11 +652,13 @@ function Plugin() {
     setTokenSearch('');
     setFetchedTokens([]);
     setTokenCount(0);
-    
+
     if (repoUrl && token) {
       setLoading(true);
       setLoadingMessage('Scanning...');
-      emit('fetch-tokens', { repoUrl, token, branch, filePath: filePath || '' });
+      const config = buildSourceConfig();
+      config.branch = branch;
+      emit('fetch-tokens', config);
     }
   };
 
@@ -699,8 +854,41 @@ function Plugin() {
               backgroundColor: 'var(--figma-color-bg-secondary)',
               borderBottom: '1px solid var(--figma-color-border)',
             }}>
-              <Text style={{ fontSize: '13px', fontWeight: '600' }}>GitHub Settings</Text>
-              <Button onClick={handleSaveConfig} disabled={loading || !selectedBranch}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={() => {
+                    setCurrentView('main');
+                    // Reload saved config to discard unsaved changes
+                    emit('load-config');
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '24px',
+                    height: '24px',
+                    border: '1px solid var(--figma-color-border)',
+                    borderRadius: '6px',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    color: 'var(--figma-color-text)',
+                    transition: 'background-color 0.15s ease',
+                    flexShrink: 0
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                    <path d="M10 2L4 8L10 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+                <Text style={{ fontSize: '13px', fontWeight: '600' }}>Settings</Text>
+              </div>
+              <Button onClick={handleSaveConfig} disabled={loading || (isGitSource && !selectedBranch)}>
                 Save
               </Button>
             </div>
@@ -714,202 +902,336 @@ function Plugin() {
                   </div>
                 )}
 
-                <Stack space="small">
-                  <Text>Repository URL</Text>
-                  <Textbox
-                    value={repoUrl}
-                    placeholder="https://github.com/owner/repo"
-                    onValueInput={setRepoUrl}
-                  />
-                </Stack>
+                {/* Token source */}
+                <Text style={{ fontSize: '13px', fontWeight: '600', marginTop: '24px' }}>Token source</Text>
+                <SegmentedControl
+                  value={sourceCategory}
+                  options={[
+                    { value: 'git', children: 'Git' },
+                    { value: 'npm', children: 'npm' },
+                    { value: 'url', children: 'URL' },
+                    { value: 'json', children: 'JSON' },
+                  ]}
+                  onValueChange={(value) => {
+                    setSourceCategory(value as any);
+                    // Clear all source fields to prevent cross-contamination
+                    setRepoUrl('');
+                    setToken('');
+                    setFilePath('');
+                    setInstanceUrl('');
+                    setUsername('');
+                    setSourceUrl('');
+                    setUrlAuthName('');
+                    setUrlAuthValue('');
+                    setNpmPackage('');
+                    setNpmVersion('latest');
+                    setNpmFilePattern('');
+                    setJsonInput('');
+                    setBranches([]);
+                    setSelectedBranch(null);
+                    setFileCount(0);
+                    setTokenCount(0);
+                    setSettingsError(null);
+                  }}
+                />
 
-                <Stack space="small">
-                  <Text>Personal Access Token</Text>
-                  <Textbox
-                    value={token}
-                    placeholder="GitHub token with repo access"
-                    onValueInput={setToken}
-                    password
-                  />
-                </Stack>
+                {/* Git provider sub-selector */}
+                {isGitSource && (
+                  <Stack space="small">
+                    <Text>Provider</Text>
+                    <Dropdown
+                      value={gitProvider}
+                      options={[
+                        { value: 'github', text: 'GitHub' },
+                        { value: 'gitlab', text: 'GitLab' },
+                        { value: 'bitbucket', text: 'BitBucket' },
+                      ]}
+                      onValueChange={(value) => {
+                        setGitProvider(value as any);
+                        setRepoUrl('');
+                        setToken('');
+                        setFilePath('');
+                        setInstanceUrl('');
+                        setUsername('');
+                        setBranches([]);
+                        setSelectedBranch(null);
+                        setFileCount(0);
+                        setTokenCount(0);
+                        setSettingsError(null);
+                      }}
+                    />
+                  </Stack>
+                )}
 
-                <Stack space="small">
-                  <Text>Directory Path (optional)</Text>
-                  <Textbox
-                    value={filePath}
-                    placeholder="Leave empty for root"
-                    onValueInput={setFilePath}
-                  />
-                </Stack>
+                {/* === GitHub fields === */}
+                {sourceType === 'github' && (
+                  <Stack space="small">
+                    <Stack space="extraSmall">
+                      <Text>Repository URL</Text>
+                      <Textbox value={repoUrl} placeholder="https://github.com/owner/repo" onValueInput={setRepoUrl} />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Personal Access Token</Text>
+                      <Textbox value={token} placeholder="Token with repo access" onValueInput={setToken} password />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Directory Path (optional)</Text>
+                      <Textbox value={filePath} placeholder="Leave empty for root" onValueInput={setFilePath} />
+                    </Stack>
+                  </Stack>
+                )}
 
+                {/* === GitLab fields === */}
+                {sourceType === 'gitlab' && (
+                  <Stack space="small">
+                    <Stack space="extraSmall">
+                      <Text>Project URL</Text>
+                      <Textbox value={repoUrl} placeholder="https://gitlab.com/group/project" onValueInput={setRepoUrl} />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Instance URL (optional, for self-hosted)</Text>
+                      <Textbox value={instanceUrl} placeholder="https://gitlab.com" onValueInput={setInstanceUrl} />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Access Token</Text>
+                      <Textbox value={token} placeholder="Token with read_api scope" onValueInput={setToken} password />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Directory Path (optional)</Text>
+                      <Textbox value={filePath} placeholder="Leave empty for root" onValueInput={setFilePath} />
+                    </Stack>
+                  </Stack>
+                )}
+
+                {/* === BitBucket fields === */}
+                {sourceType === 'bitbucket' && (
+                  <Stack space="small">
+                    <Stack space="extraSmall">
+                      <Text>Repository URL</Text>
+                      <Textbox value={repoUrl} placeholder="https://bitbucket.org/workspace/repo" onValueInput={setRepoUrl} />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Instance URL (optional, for self-hosted)</Text>
+                      <Textbox value={instanceUrl} placeholder="https://bitbucket.org" onValueInput={setInstanceUrl} />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Username</Text>
+                      <Textbox value={username} placeholder="BitBucket username" onValueInput={setUsername} />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>App Password</Text>
+                      <Textbox value={token} placeholder="App password with repo read" onValueInput={setToken} password />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Directory Path (optional)</Text>
+                      <Textbox value={filePath} placeholder="Leave empty for root" onValueInput={setFilePath} />
+                    </Stack>
+                  </Stack>
+                )}
+
+                {/* === URL fields === */}
+                {sourceCategory === 'url' && (
+                  <Stack space="small">
+                    <Stack space="extraSmall">
+                      <Text>URL</Text>
+                      <Textbox value={sourceUrl} placeholder="https://example.com/tokens.json" onValueInput={setSourceUrl} />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Auth Header Name (optional)</Text>
+                      <Textbox value={urlAuthName} placeholder="Authorization" onValueInput={setUrlAuthName} />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Auth Header Value (optional)</Text>
+                      <Textbox value={urlAuthValue} placeholder="Bearer your-token" onValueInput={setUrlAuthValue} password />
+                    </Stack>
+                  </Stack>
+                )}
+
+                {/* === npm fields === */}
+                {sourceCategory === 'npm' && (
+                  <Stack space="small">
+                    <Stack space="extraSmall">
+                      <Text>Package Name</Text>
+                      <Textbox value={npmPackage} placeholder="@company/design-tokens" onValueInput={setNpmPackage} />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Version / Tag</Text>
+                      <Textbox value={npmVersion} placeholder="latest" onValueInput={setNpmVersion} />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>Directory Path (optional)</Text>
+                      <Textbox value={filePath} placeholder="e.g. dist/json" onValueInput={setFilePath} />
+                    </Stack>
+                    <Stack space="extraSmall">
+                      <Text>File Pattern (optional)</Text>
+                      <Textbox value={npmFilePattern} placeholder="e.g. *.nested.json" onValueInput={setNpmFilePattern} />
+                    </Stack>
+                  </Stack>
+                )}
+
+                {/* === JSON paste fields === */}
+                {sourceCategory === 'json' && (
+                  <Stack space="small">
+                    <Text>Paste JSON</Text>
+                    <textarea
+                      value={jsonInput}
+                      onInput={(e) => setJsonInput((e.target as HTMLTextAreaElement).value)}
+                      placeholder={'{\n  "colors": {\n    "primary": { "$value": "#0066FF" }\n  }\n}'}
+                      style={{
+                        width: '100%',
+                        minHeight: '120px',
+                        padding: '8px',
+                        fontSize: '11px',
+                        fontFamily: 'monospace',
+                        border: '1px solid var(--figma-color-border)',
+                        borderRadius: '4px',
+                        backgroundColor: 'var(--figma-color-bg)',
+                        color: 'var(--figma-color-text)',
+                        resize: 'vertical',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </Stack>
+                )}
+
+                {/* Test Connection / Load button */}
                 <Button onClick={handleTestConnection} disabled={loading}>
-                  {loading ? loadingMessage || 'Testing...' : 'Test Connection & Scan Files'}
+                  {loading ? loadingMessage || 'Testing...'
+                    : sourceCategory === 'json' ? 'Load Tokens'
+                    : 'Test Connection & Scan Files'}
                 </Button>
 
-                <Stack space="small">
-                  <Text>Branch</Text>
-                  <Dropdown
-                    value={branches.includes(selectedBranch || '') ? selectedBranch : null}
-                    options={branches.length > 0 ? branches.map(b => ({
-                      value: b,
-                      text: b === selectedBranch && tokenCount > 0
-                        ? `${b} (${tokenCount} token${tokenCount !== 1 ? 's' : ''}${excludedCount > 0 ? `, ${excludedCount} excluded` : ''})`
-                        : b
-                    })) : [{ value: '', text: '' }]}
-                    placeholder={branches.length > 0 ? "Select branch..." : "Test connection first"}
-                    disabled={branches.length === 0 || loading}
-                    onValueChange={(value) => {
-                      if (value && value !== '' && value !== selectedBranch) {
-                        handleBranchSelect(value);
-                      }
-                    }}
-                  />
-                </Stack>
+                {/* Branch dropdown (git sources only) */}
+                {isGitSource && (
+                  <Stack space="small">
+                    <Text>Branch</Text>
+                    <Dropdown
+                      value={branches.includes(selectedBranch || '') ? selectedBranch : null}
+                      options={branches.length > 0 ? branches.map(b => ({
+                        value: b,
+                        text: b === selectedBranch && tokenCount > 0
+                          ? `${b} (${tokenCount} token${tokenCount !== 1 ? 's' : ''}${excludedCount > 0 ? `, ${excludedCount} excluded` : ''})`
+                          : b
+                      })) : [{ value: '', text: '' }]}
+                      placeholder={branches.length > 0 ? "Select branch..." : "Test connection first"}
+                      disabled={branches.length === 0 || loading}
+                      onValueChange={(value) => {
+                        if (value && value !== '' && value !== selectedBranch) {
+                          handleBranchSelect(value);
+                        }
+                      }}
+                    />
+                  </Stack>
+                )}
 
-                {!loading && fileCount > 0 && tokenCount > 0 && (
+                {/* Status message for non-git sources */}
+                {!isGitSource && !loading && tokenCount > 0 && (
                   <div style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--figma-color-border)', fontSize: '11px', color: 'var(--figma-color-text-secondary)' }}>
                     Found {tokenCount} token{tokenCount !== 1 ? 's' : ''} in {fileCount} file{fileCount !== 1 ? 's' : ''}
                   </div>
                 )}
 
-                {!loading && fileCount > 0 && tokenCount === 0 && (
-                  <div style={{
-                    padding: '12px',
-                    backgroundColor: 'var(--figma-color-bg-warning)',
-                    borderRadius: '6px'
-                  }}>
-                    <Text style={{ fontSize: '12px', fontWeight: '600' }}>
-                      ⚠ Found {fileCount} file{fileCount !== 1 ? 's' : ''} but no tokens parsed
-                    </Text>
-                    {parseErrors.length > 0 && (
-                      <div style={{ marginTop: '8px' }}>
-                        {parseErrors.slice(0,3).map((e, i) => (
-                          <Text key={i} style={{ fontSize: '10px', color: 'var(--figma-color-text-secondary)', display: 'block' }}>
-                            {e.file}: {e.message}
-                          </Text>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Token Path Exclusions */}
-                <div style={{ borderTop: '1px solid var(--figma-color-border)', paddingTop: '24px', marginTop: '16px' }}>
-                  <Text style={{ fontSize: '13px', fontWeight: '600' }}>Token Path Exclusions</Text>
-                  <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', marginBottom: '12px', display: 'block', marginTop: '12px' }}>
-                    Exclude primitive or internal tokens from matching to focus on semantic tokens.
-                  </Text>
-                  <div style={{ marginBottom: '12px' }}>
-                    <Checkbox
-                      value={exclusionConfig?.enabled ?? false}
-                      onValueChange={(checked) => {
-                        const next = { ...exclusionConfig, enabled: checked };
-                        setExclusionConfig(next);
-                        emit('save-exclusion-config', { config: next });
-                      }}
-                    >
-                      <Text style={{ fontSize: '12px', fontWeight: '500' }}>Enable token exclusions</Text>
-                    </Checkbox>
-                  </div>
-                  {exclusionConfig?.enabled && (
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px', marginBottom: '8px' }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <Textbox
-                            value={newExclusionPattern}
-                            placeholder="e.g. colors.base.**"
-                            onValueInput={(value) => {
-                              setNewExclusionPattern(value);
-                              if (value.trim()) {
-                                emit('test-exclusion-pattern', { pattern: value.trim() });
-                              } else {
-                                setPatternTestResult(null);
-                              }
-                            }}
-                          />
-                        </div>
-                        <Button
-                          onClick={() => {
-                            if (newExclusionPattern.trim()) {
-                              emit('add-exclusion-pattern', { pattern: newExclusionPattern.trim() });
-                              setNewExclusionPattern('');
+                <Checkbox
+                  value={exclusionConfig?.enabled ?? false}
+                  onValueChange={(checked) => {
+                    const next = { ...exclusionConfig, enabled: checked };
+                    setExclusionConfig(next);
+                    emit('save-exclusion-config', { config: next });
+                  }}
+                >
+                  <Text style={{ fontSize: '12px', fontWeight: '500' }}>Exclude token paths</Text>
+                </Checkbox>
+                {exclusionConfig?.enabled && (
+                  <Stack space="small">
+                    <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Textbox
+                          value={newExclusionPattern}
+                          placeholder="e.g. colors.base.**"
+                          onValueInput={(value) => {
+                            setNewExclusionPattern(value);
+                            if (value.trim()) {
+                              emit('test-exclusion-pattern', { pattern: value.trim() });
+                            } else {
                               setPatternTestResult(null);
                             }
                           }}
-                          disabled={!newExclusionPattern.trim()}
-                        >
-                          Add
-                        </Button>
+                        />
                       </div>
-                      {(exclusionConfig?.patterns?.filter((p: any) => p.source === 'custom') || []).length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
-                          {(exclusionConfig.patterns.filter((p: any) => p.source === 'custom')).map((p: any) => (
+                      <Button
+                        onClick={() => {
+                          if (newExclusionPattern.trim()) {
+                            emit('add-exclusion-pattern', { pattern: newExclusionPattern.trim() });
+                            setNewExclusionPattern('');
+                            setPatternTestResult(null);
+                          }
+                        }}
+                        disabled={!newExclusionPattern.trim()}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    {patternTestResult && newExclusionPattern.trim() && (
+                      <Text style={{ fontSize: '10px', color: 'var(--figma-color-text-secondary)', display: 'block' }}>
+                        Matches {patternTestResult.matchCount} token{patternTestResult.matchCount !== 1 ? 's' : ''}
+                        {patternTestResult.sampleMatches?.length > 0 && (
+                          <span style={{ display: 'block', marginTop: '4px' }}>
+                            {patternTestResult.sampleMatches.slice(0, 3).map((path: string, i: number) => (
+                              <span key={i} style={{ display: 'block' }}>• {path}</span>
+                            ))}
+                            {patternTestResult.matchCount > 3 && <span>... and {patternTestResult.matchCount - 3} more</span>}
+                          </span>
+                        )}
+                      </Text>
+                    )}
+                    {(exclusionConfig?.patterns?.filter((p: any) => p.source === 'custom') || []).length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {(exclusionConfig.patterns.filter((p: any) => p.source === 'custom')).map((p: any) => (
+                          <div
+                            key={p.id}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '4px 8px',
+                              backgroundColor: 'var(--figma-color-bg-secondary)',
+                              borderRadius: '4px',
+                              maxWidth: '100%'
+                            }}
+                          >
+                            <span style={{
+                              fontSize: '11px',
+                              fontWeight: '500',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              minWidth: 0,
+                              color: 'var(--figma-color-text)'
+                            }}>{p.pattern}</span>
                             <div
-                              key={p.id}
+                              onClick={() => emit('remove-exclusion-pattern', { patternId: p.id })}
                               style={{
-                                display: 'inline-flex',
+                                cursor: 'pointer',
+                                display: 'flex',
                                 alignItems: 'center',
-                                gap: '6px',
-                                padding: '4px 8px',
-                                backgroundColor: 'var(--figma-color-bg-secondary)',
-                                borderRadius: '4px',
-                                maxWidth: '100%'
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                                width: '16px',
+                                height: '16px',
+                                borderRadius: '2px'
                               }}
                             >
-                              <span style={{
-                                fontSize: '11px',
-                                fontWeight: '500',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                minWidth: 0,
-                                color: 'var(--figma-color-text)'
-                              }}>{p.pattern}</span>
-                              <div
-                                onClick={() => emit('remove-exclusion-pattern', { patternId: p.id })}
-                                style={{
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  flexShrink: 0,
-                                  width: '16px',
-                                  height: '16px',
-                                  borderRadius: '2px'
-                                }}
-                              >
-                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                                  <path d="M8 2L2 8M2 2L8 8" stroke="var(--figma-color-text-secondary)" stroke-width="1.5" stroke-linecap="round"/>
-                                </svg>
-                              </div>
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                                <path d="M8 2L2 8M2 2L8 8" stroke="var(--figma-color-text-secondary)" stroke-width="1.5" stroke-linecap="round"/>
+                              </svg>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                      {patternTestResult && newExclusionPattern.trim() && (
-                        <Text style={{ fontSize: '10px', color: 'var(--figma-color-text-secondary)', marginBottom: '8px', display: 'block' }}>
-                          Matches {patternTestResult.matchCount} token{patternTestResult.matchCount !== 1 ? 's' : ''}
-                          {patternTestResult.sampleMatches?.length > 0 && (
-                            <span style={{ display: 'block', marginTop: '4px' }}>
-                              {patternTestResult.sampleMatches.slice(0, 3).map((path: string, i: number) => (
-                                <span key={i} style={{ display: 'block' }}>• {path}</span>
-                              ))}
-                              {patternTestResult.matchCount > 3 && <span>… and {patternTestResult.matchCount - 3} more</span>}
-                            </span>
-                          )}
-                        </Text>
-                      )}
-                      {(exclusionPreview || (fetchedTokens.length > 0 && excludedCount >= 0)) && (
-                        <div style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--figma-color-border)' }}>
-                          {exclusionPreview
-                            ? `${exclusionPreview.totalTokens} tokens loaded, ${exclusionPreview.excludedCount} excluded${exclusionPreview.totalTokens ? ` (${Math.round((100 * exclusionPreview.excludedCount) / exclusionPreview.totalTokens)}%)` : ''}`
-                            : `${fetchedTokens.length} tokens loaded, ${excludedCount} excluded${fetchedTokens.length ? ` (${Math.round((100 * excludedCount) / fetchedTokens.length)}%)` : ''}`
-                          }
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Stack>
+                )}
               </Stack>
             </Container>
 
@@ -937,7 +1259,7 @@ function Plugin() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                   <path d="M21 16V8C20.9996 7.64927 20.9071 7.30481 20.7315 7.00116C20.556 6.69751 20.3037 6.44536 20 6.27L13 2.27C12.696 2.09446 12.3511 2.00205 12 2.00205C11.6489 2.00205 11.304 2.09446 11 2.27L4 6.27C3.69626 6.44536 3.44398 6.69751 3.26846 7.00116C3.09294 7.30481 3.00036 7.64927 3 8V16C3.00036 16.3507 3.09294 16.6952 3.26846 16.9988C3.44398 17.3025 3.69626 17.5546 4 17.73L11 21.73C11.304 21.9055 11.6489 21.9979 12 21.9979C12.3511 21.9979 12.696 21.9055 13 21.73L20 17.73C20.3037 17.5546 20.556 17.3025 20.7315 16.9988C20.9071 16.6952 20.9996 16.3507 21 16Z" stroke="var(--figma-color-text-brand)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
                 </svg>
-                <Text style={{ fontSize: '13px', fontWeight: '600' }}>Token source</Text>
+                <Text style={{ fontSize: '13px', fontWeight: '600' }}>Find tokens</Text>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Text>
@@ -973,41 +1295,51 @@ function Plugin() {
               </div>
             </div>
 
-            <Stack space="small">
-              <Text>Branch</Text>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 auto', minWidth: '150px' }}>
-                  {branches.length > 0 ? (
-                    <Dropdown
-                      value={branches.includes(selectedBranch || '') ? selectedBranch : null}
-                      options={branches.map(b => ({
-                        value: b,
-                        text: b === selectedBranch && tokenCount > 0
-                          ? `${b} (${tokenCount} token${tokenCount !== 1 ? 's' : ''}${excludedCount > 0 ? `, ${excludedCount} excluded` : ''})`
-                          : b
-                      }))}
-                      placeholder="Select ..."
-                      disabled={!isConfigured}
-                      onValueChange={handleBranchSelect}
-                    />
-                  ) : (
-                    <Textbox
-                      value=""
-                      placeholder={isConfigured ? "Scan tokens first" : "Set up repository first"}
-                      disabled
-                    />
+            {isGitSource ? (
+              <Stack space="small">
+                <Text>Branch</Text>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 auto', minWidth: '150px' }}>
+                    {branches.length > 0 ? (
+                      <Dropdown
+                        value={branches.includes(selectedBranch || '') ? selectedBranch : null}
+                        options={branches.map(b => ({
+                          value: b,
+                          text: b === selectedBranch && tokenCount > 0
+                            ? `${b} (${tokenCount} token${tokenCount !== 1 ? 's' : ''}${excludedCount > 0 ? `, ${excludedCount} excluded` : ''})`
+                            : b
+                        }))}
+                        placeholder="Select ..."
+                        disabled={!isConfigured}
+                        onValueChange={handleBranchSelect}
+                      />
+                    ) : (
+                      <Textbox
+                        value=""
+                        placeholder={isConfigured ? "Scan tokens first" : "Set up repository first"}
+                        disabled
+                      />
+                    )}
+                  </div>
+                  {isConfigured && (
+                    <Button onClick={handleTestConnection} disabled={loading} style={{ flexShrink: 0 }}>
+                      {loading ? 'Scanning...' : 'Scan'}
+                    </Button>
                   )}
                 </div>
-                {isConfigured && (
-                  <Button onClick={handleTestConnection} disabled={loading} style={{ flexShrink: 0 }}>
-                    {loading ? 'Scanning...' : 'Scan'}
-                  </Button>
+                {!isConfigured && (
+                  <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)' }}>Set up repository first</Text>
                 )}
+              </Stack>
+            ) : isConfigured ? (
+              <div style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--figma-color-border)', fontSize: '11px', color: 'var(--figma-color-text-secondary)' }}>
+                {tokenCount > 0
+                  ? `${tokenCount} token${tokenCount !== 1 ? 's' : ''} loaded${excludedCount > 0 ? ` (${excludedCount} excluded)` : ''}`
+                  : `Source configured (${sourceType})`}
               </div>
-              {!isConfigured && (
-                <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)' }}>Set up repository first</Text>
-              )}
-            </Stack>
+            ) : (
+              <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)' }}>Set up token source first</Text>
+            )}
 
             <Stack space="small">
               <Text>Find Token</Text>
@@ -1015,7 +1347,7 @@ function Plugin() {
                 <Textbox
                   value={tokenSearch}
                   placeholder={selectedToken ? "Type to change selection..." : "Start typing to search tokens..."}
-                  disabled={!isConfigured || !selectedBranch || fetchedTokens.length === 0}
+                  disabled={!isConfigured || (isGitSource && !selectedBranch) || fetchedTokens.length === 0}
                   onValueInput={setTokenSearch}
                   onKeyDown={handleTokenSearchKeyDown}
                 />
@@ -1730,6 +2062,33 @@ function Plugin() {
               <Text style={{ fontSize: '10px', color: 'var(--figma-color-text-secondary)', lineHeight: '14px' }}>
                 Made with ❤️ for design systems teams
               </Text>
+            </div>
+
+            {/* Source integration tests */}
+            <div style={{ borderTop: '1px solid var(--figma-color-border)', paddingTop: '12px', marginTop: '4px' }}>
+              <Button
+                onClick={() => {
+                  setSourceTestRunning(true);
+                  setSourceTestResults(null);
+                  emit('run-source-tests');
+                }}
+                disabled={sourceTestRunning}
+                secondary
+              >
+                {sourceTestRunning ? 'Running tests...' : 'Run Source Tests'}
+              </Button>
+              {sourceTestResults && (
+                <div style={{ marginTop: '8px' }}>
+                  <Text style={{ fontSize: '10px', fontWeight: '600', display: 'block', marginBottom: '6px' }}>
+                    {sourceTestResults.passed} passed, {sourceTestResults.failed} failed
+                  </Text>
+                  {sourceTestResults.results.map((r: any, i: number) => (
+                    <div key={i} style={{ fontSize: '10px', lineHeight: '16px', color: r.success ? 'var(--figma-color-text-secondary)' : 'var(--figma-color-text-danger)' }}>
+                      {r.success ? 'PASS' : 'FAIL'} {r.source}.{r.step}: {r.detail}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </Stack>
         ) : null}

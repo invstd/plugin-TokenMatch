@@ -864,6 +864,9 @@
 button[disabled] {
   color: var(--figma-color-text-disabled) !important;
 }
+input[type="checkbox"]:not(:checked) ~ div {
+  border-color: var(--figma-color-border-disabled) !important;
+}
 @property --tw-space-y-reverse {
   syntax: "*";
   inherits: false;

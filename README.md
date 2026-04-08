@@ -6,7 +6,7 @@ TokenMatch is a Figma plugin that bridges the gap between your design token repo
 
 ## 🎯 What It Does
 
-TokenMatch scans your Figma file and matches component properties (colors, spacing, typography, effects) against your design tokens stored in GitHub. This helps you:
+TokenMatch scans your Figma file and matches component properties (colors, spacing, typography, effects) against your design tokens from any source — GitHub, GitLab, BitBucket, npm packages, URLs, or pasted JSON. This helps you:
 
 - **Find token usage**: Discover which components use a specific token
 - **Maintain consistency**: Ensure your components align with your token system
@@ -16,7 +16,7 @@ TokenMatch scans your Figma file and matches component properties (colors, spaci
 ## ✨ Features
 
 ### 🔍 Token Matching
-- Search through all your design tokens from your GitHub repository
+- Search through all your design tokens from any supported source
 - Match tokens to component properties (colors, spacing, typography, shadows, etc.)
 - Filter results by direct matches (excluding nested component references)
 - View all variants that use a specific token
@@ -39,25 +39,30 @@ TokenMatch scans your Figma file and matches component properties (colors, spaci
 - Intelligent caching for faster subsequent scans
 - Handles large files with thousands of components
 
-### 🔄 GitHub Integration
-- Connect to any GitHub repository (public or private)
-- Support for custom directory paths
-- Branch selection for different token versions
-- Automatic token parsing (supports JSON, JS, TS formats)
+### 🔄 Multiple Token Sources
+- **Git providers**: GitHub, GitLab (Cloud + self-hosted), BitBucket (Cloud + Server)
+- **npm packages**: Fetch tokens from any published npm package with version/tag selection and file pattern filtering
+- **URL**: Fetch tokens from any URL with optional auth headers
+- **Paste JSON**: Paste token JSON directly — no repository or network needed
+- Branch selection for git providers, directory path filtering for all sources
+- Automatic token parsing (W3C DTCG, Tokens Studio, plain JSON)
 
 ## 🚀 Getting Started
 
-### 1. Configure GitHub Connection
+### 1. Configure Token Source
 
-1. Open the plugin settings (gear icon)
-2. Enter your GitHub repository URL: `https://github.com/owner/repo`
-3. Add your [GitHub Personal Access Token](https://github.com/settings/tokens) with `repo` access
-4. (Optional) Specify a directory path if tokens are in a subfolder
-5. Click "Test Connection & Scan Files"
+1. Open the plugin settings (gear icon or back arrow)
+2. Choose your token source type: **Git** | **npm** | **URL** | **JSON**
+3. Fill in the source-specific fields:
+   - **Git** (GitHub/GitLab/BitBucket): repository URL, access token, optional directory path
+   - **npm**: package name (or npmjs.com URL), version/tag, optional directory path and file pattern
+   - **URL**: direct URL to a JSON token file, optional auth header
+   - **JSON**: paste token JSON directly into the textarea
+4. Click "Test Connection & Scan Files" (or "Load Tokens" for JSON)
 
-### 2. Select a Branch
+### 2. Select a Branch (Git only)
 
-After connection is successful:
+For git sources, after connection is successful:
 - Choose the branch containing your tokens
 - The plugin will automatically fetch and parse tokens
 - Token count will be displayed next to the branch name
@@ -76,18 +81,28 @@ After connection is successful:
 - Click "Paste to canvas" to create instances of all matching components
 - Results show which properties match and their values
 
-## 🔑 GitHub Token Setup
+## 🔑 Authentication Setup
 
-To connect your repository, you'll need a GitHub Personal Access Token:
+### GitHub
+1. Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
+2. Generate a token with `repo` scope (private repos) or `public_repo` (public only)
 
-1. Go to [GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)](https://github.com/settings/tokens)
-2. Click "Generate new token (classic)"
-3. Give it a descriptive name (e.g., "TokenMatch Plugin")
-4. Select the `repo` scope (for private repos) or `public_repo` (for public repos only)
-5. Click "Generate token"
-6. Copy the token and paste it in the plugin settings
+### GitLab
+1. Go to User Settings > Access Tokens
+2. Create a token with `read_api` or `read_repository` scope
 
-**Note**: Keep your token secure. The plugin stores it locally in Figma's client storage.
+### BitBucket
+1. Go to Personal Settings > App Passwords
+2. Create an app password with repository read access
+3. Enter both your username and the app password in settings
+
+### npm (public packages)
+No authentication needed. Just enter the package name.
+
+### URL / JSON
+No authentication needed for JSON paste. URLs support optional auth headers.
+
+**Note**: Credentials are stored locally in Figma's client storage.
 
 ## 📁 Supported Token Formats
 
@@ -135,8 +150,7 @@ Current version: **1.0.0**
 
 ### Requirements
 - Figma desktop app or browser version
-- GitHub repository with design tokens
-- GitHub Personal Access Token
+- Design tokens from any supported source (Git repo, npm package, URL, or JSON)
 
 ### Performance
 - Optimized for files with thousands of components
@@ -145,7 +159,17 @@ Current version: **1.0.0**
 
 ## 📝 Changelog
 
-### 1.0.0 (Current)
+### 1.3.0 (Current)
+- Unified token source abstraction with 6 source types
+- GitLab and BitBucket support (Cloud + self-hosted)
+- npm package support with version resolution and file pattern filtering
+- URL source with optional auth headers
+- JSON paste for zero-setup usage
+- Settings UI with SegmentedControl source selector
+- Background component indexing with document change tracking
+- Token path exclusion with glob patterns
+
+### 1.0.0
 - Initial release
 - GitHub integration with token fetching
 - Component scanning and matching

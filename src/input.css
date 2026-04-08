@@ -79,3 +79,8 @@
 button[disabled] {
   color: var(--figma-color-text-disabled) !important;
 }
+
+/* Lighter border for unchecked checkboxes */
+input[type="checkbox"]:not(:checked) ~ div {
+  border-color: var(--figma-color-border-disabled) !important;
+}

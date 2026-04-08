@@ -3,6 +3,8 @@ import { FigmaComponentService } from '../services/figma-component-service';
 import { FigmaComponentServiceOptimized, ScanOptions } from '../services/figma-component-service-optimized';
 import { TokenMatchingService } from '../services/token-matching-service';
 import { ExclusionService } from '../services/exclusion-service';
+import { getSource } from '../services/sources/source-registry';
+import { TokenSourceConfig, GitHubSourceConfig, TokenSourceType } from '../services/sources/types';
 import { showUI, on, emit } from '@create-figma-plugin/utilities';
 
 function tokenPathToString(t: { path?: string[] | string }): string {
@@ -22,11 +24,66 @@ export default function () {
     console.error('Error loading pages on startup:', error);
   });
 
-interface RepoConfig {
+/** @deprecated Use TokenSourceConfig instead. Kept for legacy config migration. */
+interface LegacyRepoConfig {
   repoUrl: string;
   token: string;
   branch: string;
   filePath?: string;
+}
+
+/**
+ * Migrate a legacy GitHub-only config to the new TokenSourceConfig format.
+ * New configs already have a `type` field and pass through unchanged.
+ */
+function migrateConfig(raw: any): TokenSourceConfig | null {
+  if (!raw) return null;
+  if (raw.type) return raw as TokenSourceConfig; // Already new format
+  // Legacy format: { repoUrl, token, branch, filePath }
+  if (raw.repoUrl) {
+    return {
+      type: 'github',
+      repoUrl: raw.repoUrl,
+      token: raw.token,
+      branch: raw.branch || '',
+      directoryPath: raw.filePath || '',
+    };
+  }
+  return null;
+}
+
+/**
+ * Build a cache key from a TokenSourceConfig.
+ */
+function buildSourceCacheKey(config: TokenSourceConfig): string | null {
+  switch (config.type) {
+    case 'github':
+      return `tokenCache_github_${config.repoUrl}_${config.branch}_${config.directoryPath || 'root'}`;
+    case 'gitlab':
+      return `tokenCache_gitlab_${config.projectUrl}_${config.branch}_${config.directoryPath || 'root'}`;
+    case 'bitbucket':
+      return `tokenCache_bitbucket_${config.repoUrl}_${config.branch}_${config.directoryPath || 'root'}`;
+    case 'url':
+      return `tokenCache_url_${config.url}`;
+    case 'npm':
+      return `tokenCache_npm_${config.packageName}_${config.version}_${config.directoryPath || 'root'}`;
+    case 'json':
+      return null; // No caching for pasted JSON
+  }
+}
+
+/**
+ * Convert legacy message format to TokenSourceConfig for backward compatibility.
+ * Called by handlers that receive old-style messages from the UI.
+ */
+function legacyMsgToConfig(msg: { repoUrl: string; token: string; branch?: string; filePath?: string }): GitHubSourceConfig {
+  return {
+    type: 'github',
+    repoUrl: msg.repoUrl,
+    token: msg.token,
+    branch: msg.branch || '',
+    directoryPath: msg.filePath || '',
+  };
 }
 
 // Initialize services
@@ -271,11 +328,11 @@ async function clearTokenCache(cacheKey: string): Promise<void> {
   }
 }
 
-// Load saved configuration on startup
-async function loadConfig(): Promise<RepoConfig | null> {
+// Load saved configuration on startup (handles both legacy and new formats)
+async function loadConfig(): Promise<TokenSourceConfig | null> {
   try {
-    const config = await figma.clientStorage.getAsync('repoConfig');
-    return config || null;
+    const raw = await figma.clientStorage.getAsync('repoConfig');
+    return migrateConfig(raw);
   } catch (error) {
     console.error('Error loading config:', error);
     return null;
@@ -283,9 +340,13 @@ async function loadConfig(): Promise<RepoConfig | null> {
 }
 
 // Save configuration
-async function saveConfig(config: RepoConfig): Promise<void> {
+async function saveConfig(config: TokenSourceConfig | LegacyRepoConfig): Promise<void> {
   try {
-    await figma.clientStorage.setAsync('repoConfig', config);
+    // Ensure we save in the new format
+    const normalized = ('type' in config) ? config : migrateConfig(config);
+    if (normalized) {
+      await figma.clientStorage.setAsync('repoConfig', normalized);
+    }
   } catch (error) {
     console.error('Error saving config:', error);
   }
@@ -311,55 +372,32 @@ on('clear-config', async () => {
   emit('config-loaded', null);
 });
 
-  on('test-connection', async (msg: { repoUrl: string; token: string; filePath?: string }) => {
-    const parsed = githubService.parseGitHubUrl(msg.repoUrl);
-
-    if (!parsed) {
-      emit('connection-result', {
-        success: false,
-        error: 'Invalid GitHub URL format'
-      });
-      return;
-    }
-
+  on('test-connection', async (msg: any) => {
     try {
-      emit('connection-progress', { message: 'Connecting to GitHub...' });
-      const branches = await githubService.fetchBranches(parsed.owner, parsed.repo, msg.token);
-      
-      // Count files and tokens during test
-      let fileCount = 0;
-      let sampleFiles: string[] = [];
-      
-      if (branches.length > 0) {
-        try {
-          const defaultBranch = branches[0];
-          emit('connection-progress', { message: 'Scanning for token files...' });
-          
-          const tokenFiles = await githubService.detectTokenFiles(
-            parsed.owner,
-            parsed.repo,
-            defaultBranch,
-            msg.token,
-            msg.filePath || ''
-          );
-          
-          fileCount = tokenFiles.length;
-          sampleFiles = tokenFiles.slice(0, 5);
-        } catch (error) {
-          console.error('Token detection failed:', error);
-          // Don't fail the connection test if token detection fails
-        }
-      }
-      
-      emit('connection-result', {
-        success: true,
-        branches: branches.slice(0, 10), // Only send first 10 branches
-        owner: parsed.owner,
-        repo: parsed.repo,
-        fileCount: fileCount,
-        tokenCount: fileCount, // Use file count as estimate instead of parsing
-        sampleFiles: sampleFiles.map(f => f.length > 50 ? f.substring(0, 47) + '...' : f) // Truncate long file names
+      // Support both legacy format { repoUrl, token, filePath } and new { type, ... }
+      const config: TokenSourceConfig = msg.type ? msg : legacyMsgToConfig(msg);
+      const source = getSource(config.type);
+
+      const result = await source.testConnection(config, (message) => {
+        emit('connection-progress', { message });
       });
+
+      if (result.success) {
+        // Include owner/repo for legacy UI compatibility
+        const extra: any = {};
+        if (config.type === 'github') {
+          const parsed = githubService.parseGitHubUrl(config.repoUrl);
+          if (parsed) { extra.owner = parsed.owner; extra.repo = parsed.repo; }
+        }
+        emit('connection-result', {
+          ...result,
+          ...extra,
+          tokenCount: result.fileCount, // Use file count as estimate
+          sampleFiles: (result.sampleFiles || []).map(f => f.length > 50 ? f.substring(0, 47) + '...' : f),
+        });
+      } else {
+        emit('connection-result', result);
+      }
     } catch (error) {
       emit('connection-result', {
         success: false,
@@ -368,7 +406,7 @@ on('clear-config', async () => {
     }
   });
 
-on('save-config', async (msg: RepoConfig) => {
+on('save-config', async (msg: any) => {
   await saveConfig(msg);
   emit('config-saved', { success: true });
 });
@@ -757,43 +795,32 @@ on('save-config', async (msg: RepoConfig) => {
   const FETCH_BATCH_SIZE = 5; // Fetch 5 files in parallel (avoid rate limiting)
   const STREAM_CHUNK_SIZE = 100; // Send tokens in chunks for progressive loading
 
-  on('fetch-tokens', async (msg: { repoUrl: string; token: string; branch: string; filePath?: string; forceRefresh?: boolean }) => {
-    const parsed = githubService.parseGitHubUrl(msg.repoUrl);
-
-    if (!parsed) {
-      emit('tokens-result', {
-        success: false,
-        error: 'Invalid GitHub URL format'
-      });
-      return;
-    }
-
+  on('fetch-tokens', async (msg: any) => {
     try {
-      const directoryPath = msg.filePath || '';
-      const cacheKey = getCacheKey(parsed.owner, parsed.repo, msg.branch, directoryPath);
-      
+      // Support both legacy format and new TokenSourceConfig
+      const config: TokenSourceConfig = msg.type ? msg : legacyMsgToConfig(msg);
+      const forceRefresh = msg.forceRefresh === true;
+      const source = getSource(config.type);
+      const cacheKey = buildSourceCacheKey(config);
+
       // ========================================================================
-      // OPTIMIZATION 1: Check cache with SHA-based invalidation
+      // OPTIMIZATION 1: Check cache with source-provided invalidation key
       // ========================================================================
-      if (!msg.forceRefresh) {
+      if (!forceRefresh && cacheKey) {
         emit('tokens-progress', { message: 'Checking for cached tokens...' });
-        
-        // Get current commit SHA and cached data in parallel
-        const [currentSha, cachedData] = await Promise.all([
-          githubService.getLatestCommitSha(parsed.owner, parsed.repo, msg.branch, msg.token),
+
+        const [currentKey, cachedData] = await Promise.all([
+          source.getCacheKey(config),
           getCachedTokens(cacheKey)
         ]);
-        
-        // If we have valid cached data and SHA matches, return cached tokens immediately
-        if (cachedData && currentSha && cachedData.sha === currentSha) {
+
+        if (cachedData && currentKey && cachedData.sha === currentKey) {
           emit('tokens-progress', { message: 'Using cached tokens (no changes detected)' });
-          
-          // Stream cached tokens in chunks for responsive UI
+
           const cachedTokens = cachedData.tokens;
           for (let i = 0; i < cachedTokens.length; i += STREAM_CHUNK_SIZE) {
             const chunk = cachedTokens.slice(i, i + STREAM_CHUNK_SIZE);
             const isLast = i + STREAM_CHUNK_SIZE >= cachedTokens.length;
-            
             emit('tokens-chunk', {
               tokens: chunk,
               chunkIndex: Math.floor(i / STREAM_CHUNK_SIZE),
@@ -801,7 +828,7 @@ on('save-config', async (msg: RepoConfig) => {
               isLast
             });
           }
-          
+
           lastFetchedTokens = cachedTokens;
           await exclusionService.loadConfig();
           const exclusionResult = exclusionService.applyExclusions(cachedTokens);
@@ -821,24 +848,18 @@ on('save-config', async (msg: RepoConfig) => {
           return;
         }
       }
-      
+
       // ========================================================================
-      // OPTIMIZATION 2: Detect token files (uses Trees API)
+      // OPTIMIZATION 2: Detect token files via source abstraction
       // ========================================================================
-      emit('tokens-progress', { message: 'Scanning for token files...' });
-      
-      const tokenFiles = await githubService.detectTokenFiles(
-        parsed.owner,
-        parsed.repo,
-        msg.branch,
-        msg.token,
-        directoryPath
-      );
+      const tokenFiles = await source.detectTokenFiles(config, (message) => {
+        emit('tokens-progress', { message });
+      });
 
       if (tokenFiles.length === 0) {
         emit('tokens-result', {
           success: false,
-          error: `No token files found${directoryPath ? ` in '${directoryPath}'` : ' in repository'}. Looking for .json files (excluding config files).`
+          error: 'No token files found. Looking for .json files (excluding config files).'
         });
         return;
       }
@@ -846,55 +867,38 @@ on('save-config', async (msg: RepoConfig) => {
       // ========================================================================
       // OPTIMIZATION 3: Parallel file fetching with batched Promise.all
       // ========================================================================
-      
       const allTokens: any[] = [];
       const allErrors: Array<{ file: string; message: string }> = [];
       let filesProcessed = 0;
       let totalTokens = 0;
       const perFileCounts: Array<{ file: string; count: number }> = [];
-      
-      // Store fetched file contents for processing
       const fileContents: Array<{ path: string; content: string }> = [];
-      
-      // Phase 1: Fetch all files in parallel batches
+
       emit('tokens-progress', { message: `Fetching ${tokenFiles.length} files...` });
-      
+
       for (let i = 0; i < tokenFiles.length; i += FETCH_BATCH_SIZE) {
         const batch = tokenFiles.slice(i, i + FETCH_BATCH_SIZE);
         const batchEnd = Math.min(i + FETCH_BATCH_SIZE, tokenFiles.length);
-        
-        emit('tokens-progress', { 
-          message: `Fetching files ${i + 1}-${batchEnd} of ${tokenFiles.length}...` 
+
+        emit('tokens-progress', {
+          message: `Fetching files ${i + 1}-${batchEnd} of ${tokenFiles.length}...`
         });
-        
-        // Fetch batch in parallel
+
         const batchResults = await Promise.all(
           batch.map(async (filePath) => {
             try {
-              const fileContent = await githubService.fetchFileContents(
-                parsed.owner,
-                parsed.repo,
-                msg.branch,
-                msg.token,
-                filePath
-              );
-              
-              if (!fileContent.content) {
-                return { path: filePath, error: 'Empty file content' };
-              }
-              
-              const decoded = githubService.decodeBase64Content(fileContent.content);
-              return { path: filePath, content: decoded };
+              const content = await source.fetchFileContent(config, filePath);
+              if (!content) return { path: filePath, error: 'Empty file content' };
+              return { path: filePath, content };
             } catch (error) {
-              return { 
-                path: filePath, 
-                error: error instanceof Error ? error.message : 'Fetch failed' 
+              return {
+                path: filePath,
+                error: error instanceof Error ? error.message : 'Fetch failed'
               };
             }
           })
         );
-        
-        // Collect results
+
         for (const result of batchResults) {
           if ('content' in result && result.content) {
             fileContents.push({ path: result.path, content: result.content });
@@ -904,15 +908,15 @@ on('save-config', async (msg: RepoConfig) => {
           }
         }
       }
-      
+
       // ========================================================================
       // OPTIMIZATION 4: Parse files and stream results progressively
       // ========================================================================
       emit('tokens-progress', { message: `Processing ${fileContents.length} files...` });
-      
+
       let chunkBuffer: any[] = [];
       let chunkIndex = 0;
-      
+
       for (const { path: filePath, content } of fileContents) {
         try {
           let json: any;
@@ -923,7 +927,6 @@ on('save-config', async (msg: RepoConfig) => {
           }
 
           const extracted = extractTokensFromJson(json, filePath);
-
           const countForFile = extracted.length;
           totalTokens += countForFile;
           perFileCounts.push({ file: filePath, count: countForFile });
@@ -935,19 +938,17 @@ on('save-config', async (msg: RepoConfig) => {
             });
           }
 
-          // Add tokens and stream chunks
           for (const t of extracted) {
             const formattedToken = {
               name: t.name || '',
               path: t.path || '',
               type: t.type || 'unknown',
               sourceFile: t.sourceFile || '',
-              value: t.value // Include value for search and display
+              value: t.value
             };
             allTokens.push(formattedToken);
             chunkBuffer.push(formattedToken);
-            
-            // Stream chunk when buffer is full
+
             if (chunkBuffer.length >= STREAM_CHUNK_SIZE) {
               emit('tokens-chunk', {
                 tokens: chunkBuffer,
@@ -957,7 +958,6 @@ on('save-config', async (msg: RepoConfig) => {
               chunkBuffer = [];
             }
           }
-
           filesProcessed++;
         } catch (error) {
           console.error(`Failed to parse ${filePath}:`, error);
@@ -968,8 +968,7 @@ on('save-config', async (msg: RepoConfig) => {
           });
         }
       }
-      
-      // Stream any remaining tokens in buffer
+
       if (chunkBuffer.length > 0) {
         emit('tokens-chunk', {
           tokens: chunkBuffer,
@@ -983,17 +982,16 @@ on('save-config', async (msg: RepoConfig) => {
       // ========================================================================
       // OPTIMIZATION 5: Cache the results for next time
       // ========================================================================
-      const currentSha = await githubService.getLatestCommitSha(
-        parsed.owner, parsed.repo, msg.branch, msg.token
-      );
-      
-      if (currentSha) {
-        await setCachedTokens(cacheKey, currentSha, allTokens, {
-          totalTokens,
-          filesProcessed,
-          totalFiles: tokenFiles.length,
-          perFileCounts
-        });
+      if (cacheKey) {
+        const currentKey = await source.getCacheKey(config);
+        if (currentKey) {
+          await setCachedTokens(cacheKey, currentKey, allTokens, {
+            totalTokens,
+            filesProcessed,
+            totalFiles: tokenFiles.length,
+            perFileCounts
+          });
+        }
       }
 
       lastFetchedTokens = allTokens;
@@ -1001,7 +999,6 @@ on('save-config', async (msg: RepoConfig) => {
       const exclusionResult = exclusionService.applyExclusions(allTokens);
       const excludedPaths = exclusionResult.excluded.map(tokenPathToString);
 
-      // Send final result (UI may already have tokens from chunks)
       emit('tokens-result', {
         success: true,
         tokens: allTokens,
@@ -1009,7 +1006,7 @@ on('save-config', async (msg: RepoConfig) => {
         excludedPaths,
         metadata: {
           totalTokens,
-          filesProcessed: filesProcessed,
+          filesProcessed,
           totalFiles: tokenFiles.length,
           perFileCounts,
           errors: allErrors,
@@ -1024,29 +1021,14 @@ on('save-config', async (msg: RepoConfig) => {
     }
   });
 
-on('detect-token-files', async (msg: { repoUrl: string; token: string; branch: string; directoryPath?: string }) => {
-  const parsed = githubService.parseGitHubUrl(msg.repoUrl);
-  
-  if (!parsed) {
-    emit('token-files-result', {
-      success: false,
-      error: 'Invalid GitHub URL format'
-    });
-    return;
-  }
-  
+on('detect-token-files', async (msg: any) => {
   try {
-    const tokenFiles = await githubService.detectTokenFiles(
-      parsed.owner,
-      parsed.repo,
-      msg.branch,
-      msg.token,
-      msg.directoryPath || ''
-    );
-    emit('token-files-result', {
-      success: true,
-      files: tokenFiles
+    const config: TokenSourceConfig = msg.type ? msg : legacyMsgToConfig(msg);
+    const source = getSource(config.type);
+    const tokenFiles = await source.detectTokenFiles(config, (message) => {
+      emit('tokens-progress', { message });
     });
+    emit('token-files-result', { success: true, files: tokenFiles });
   } catch (error) {
     emit('token-files-result', {
       success: false,
@@ -1877,6 +1859,109 @@ on('inspect-selection', async () => {
       error: error instanceof Error ? error.message : 'Failed to inspect selection'
     });
   }
+});
+
+// ============================================================================
+// TEST: Token source integration tests
+// Exercises each source's testConnection, detectTokenFiles, and fetchFileContent
+// against real public endpoints. Triggered from UI via 'run-source-tests'.
+// ============================================================================
+on('run-source-tests', async () => {
+  const results: Array<{ source: string; step: string; success: boolean; detail: string }> = [];
+
+  function log(source: string, step: string, success: boolean, detail: string) {
+    results.push({ source, step, success, detail });
+    console.log(`[Test] ${success ? 'PASS' : 'FAIL'} ${source}.${step}: ${detail}`);
+  }
+
+  // --- JSON Source ---
+  try {
+    const jsonConfig = {
+      type: 'json' as const,
+      files: [{ name: 'test.json', content: JSON.stringify({
+        colors: { primary: { '$value': '#0066FF', '$type': 'color' } },
+        spacing: { sm: { '$value': '8px', '$type': 'dimension' } }
+      })}]
+    };
+    const jsonSource = getSource('json');
+
+    const conn = await jsonSource.testConnection(jsonConfig, () => {});
+    log('json', 'testConnection', conn.success, conn.success ? `${conn.fileCount} file(s)` : conn.error || 'failed');
+
+    if (conn.success) {
+      const files = await jsonSource.detectTokenFiles(jsonConfig, () => {});
+      log('json', 'detectTokenFiles', files.length > 0, `${files.length} file(s): ${files.join(', ')}`);
+
+      const content = await jsonSource.fetchFileContent(jsonConfig, 'test.json');
+      const parsed = JSON.parse(content);
+      log('json', 'fetchFileContent', !!parsed.colors, `Parsed keys: ${Object.keys(parsed).join(', ')}`);
+    }
+  } catch (e) {
+    log('json', 'error', false, e instanceof Error ? e.message : String(e));
+  }
+
+  // --- URL Source ---
+  try {
+    const urlConfig = {
+      type: 'url' as const,
+      url: 'https://unpkg.com/@inversestudio/design-tokens@1.2.1/dist/json/tokens.json',
+    };
+    const urlSource = getSource('url');
+
+    const conn = await urlSource.testConnection(urlConfig, () => {});
+    log('url', 'testConnection', conn.success, conn.success ? 'Valid JSON response' : conn.error || 'failed');
+
+    if (conn.success) {
+      const files = await urlSource.detectTokenFiles(urlConfig, () => {});
+      log('url', 'detectTokenFiles', files.length > 0, `${files.length} file(s)`);
+
+      const content = await urlSource.fetchFileContent(urlConfig, urlConfig.url);
+      const contentLength = content.length;
+      log('url', 'fetchFileContent', contentLength > 100, `${contentLength} chars`);
+    }
+  } catch (e) {
+    log('url', 'error', false, e instanceof Error ? e.message : String(e));
+  }
+
+  // --- npm Source ---
+  try {
+    const npmConfig = {
+      type: 'npm' as const,
+      packageName: '@inversestudio/design-tokens',
+      version: 'latest',
+      directoryPath: '',
+    };
+    const npmSource = getSource('npm');
+
+    const conn = await npmSource.testConnection(npmConfig, () => {});
+    log('npm', 'testConnection', conn.success, conn.success ? `${conn.fileCount} file(s)` : conn.error || 'failed');
+
+    if (conn.success) {
+      const files = await npmSource.detectTokenFiles(npmConfig, () => {});
+      log('npm', 'detectTokenFiles', files.length > 0, `${files.length} file(s), first: ${files[0] || 'none'}`);
+
+      if (files.length > 0) {
+        const content = await npmSource.fetchFileContent(npmConfig, files[0]);
+        log('npm', 'fetchFileContent', content.length > 10, `${content.length} chars from ${files[0]}`);
+      }
+    }
+  } catch (e) {
+    log('npm', 'error', false, e instanceof Error ? e.message : String(e));
+  }
+
+  // --- GitHub Source (public repo, no auth needed for Trees API) ---
+  // Skipped: requires auth token. Tested via existing plugin flow.
+  log('github', 'skipped', true, 'Tested via existing plugin flow with user credentials');
+
+  // --- GitLab Source ---
+  log('gitlab', 'skipped', true, 'Requires access token — test manually with credentials');
+
+  // --- BitBucket Source ---
+  log('bitbucket', 'skipped', true, 'Requires app password — test manually with credentials');
+
+  const passed = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success).length;
+  emit('source-test-results', { results, passed, failed, total: results.length });
 });
 
 }

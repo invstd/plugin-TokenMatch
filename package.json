@@ -36,7 +36,8 @@
     "ui": "src/ui.tsx",
     "documentAccess": "dynamic-page",
     "networkAccess": {
-      "allowedDomains": ["https://api.github.com"]
+      "allowedDomains": ["*"],
+      "reasoning": "Connects to GitHub, GitLab, BitBucket (including self-hosted instances), npm registries, and user-provided URLs to fetch design token files."
     }
   }
 }

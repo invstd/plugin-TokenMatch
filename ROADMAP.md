@@ -13,8 +13,8 @@ TokenMatch currently excels at finding components that use specific design token
 | Phase | Focus | Features |
 |-------|-------|----------|
 | **~~1 — Polish~~** | ~~Finish & verify existing foundation~~ | ~~09 (Exclude Token Paths), 08 (Background Indexing)~~ ✅ |
-| **2 — Remove Barriers** | Enable usage without a repository | 06 (JSON/Folder Upload), 11a (Lint: untokenized layers) |
-| **3 — Platform Expansion** | Broaden token sources & complete linting | 07 (Multi-Provider), 11b (Lint: value mismatch), 10 (Figma Variables) |
+| **~~2 — Token Sources~~** | ~~Unified token source abstraction~~ | ~~06 (JSON Paste), 07 (Multi-Provider + URL + npm)~~ ✅ |
+| **3 — Linting & Variables** | Lint mode + native Figma support | 11a/11b (Lint Mode), 10 (Figma Variables) |
 | **4 — Analysis** | Reverse analysis & discovery | 02 (Unused Token Finder) |
 | **5 — Reporting** | Export & external integrations | 04 (JSON/CSV Export), 03 (Token Statistics), 05 (Airtable) |
 
@@ -82,34 +82,28 @@ TokenMatch currently excels at finding components that use specific design token
 
 ---
 
-### 6. JSON/Folder Upload — Phase 2
+### ~~6. JSON Paste~~ — Phase 2 ✅
 
-**Goal:** Allow direct token file upload without requiring a repository connection.
-
-**Key Capabilities:**
-- File picker, drag-and-drop, or paste JSON directly
-- Folder upload with recursive scanning
-- Auto-detection of token formats (Style Dictionary, Tokens Studio, W3C DTCG)
-- Session persistence in plugin storage
-
-**User Value:** Removes the biggest adoption barrier — teams can use TokenMatch without any repository setup.
-
-**Implementation Reference:** [06-json-folder-upload.md](./roadmap/06-json-folder-upload.md)
+> **Completed.** Reimagined from "JSON/Folder Upload" into a simpler paste-based approach as part of the unified token source abstraction. Users paste JSON directly into a textarea in settings — no file picker or drag-and-drop needed. Supports W3C DTCG, Tokens Studio, and plain JSON formats.
+>
+> **Implementation Reference:** [06-json-folder-upload.md](./roadmap/06-json-folder-upload.md) (original spec, superseded by implementation)
 
 ---
 
-### 7. Multiple Repository Providers — Phase 3
+### ~~7. Unified Token Source Abstraction~~ — Phase 2 ✅
 
-**Goal:** Extend connectivity beyond GitHub to GitLab, BitBucket, and custom Git URLs.
-
-**Key Capabilities:**
-- Provider abstraction layer with normalized API
-- GitHub, GitLab (Cloud + Self-Managed), BitBucket (Cloud + Server), custom URLs
-- Multiple auth methods: OAuth, PAT, App Passwords
-
-**Dependency note:** Must complete before lint value mismatch check (11b) so it builds against a stable provider interface.
-
-**Implementation Reference:** [07-multiple-repository-providers.md](./roadmap/07-multiple-repository-providers.md)
+> **Completed.** Reimagined from "Multiple Repository Providers" into a comprehensive token source layer supporting 6 source types via a unified `TokenSource` interface:
+>
+> - **Git providers**: GitHub (refactored), GitLab (Cloud + self-hosted), BitBucket (Cloud + Server)
+> - **URL**: fetch tokens from any URL with optional auth headers
+> - **npm**: fetch from npm packages via jsdelivr/unpkg CDN with version resolution, directory path, and file pattern filtering
+> - **JSON paste**: paste token JSON directly, no network needed
+>
+> Settings UI uses a SegmentedControl (Git | npm | URL | JSON) with a sub-dropdown for git provider selection. All sources output `ParsedToken[]` via the existing `TokenParser`.
+>
+> **Key files:** `services/sources/types.ts`, `services/sources/*-source.ts`, `services/sources/source-registry.ts`
+>
+> **Implementation Reference:** [07-multiple-repository-providers.md](./roadmap/07-multiple-repository-providers.md) (original spec, superseded by implementation)
 
 ---
 
@@ -174,14 +168,14 @@ Phase 1: Polish ✅
   09 Exclude Token Paths ──── ✅ complete
   08 Background Indexing ──── ✅ complete (invisible infrastructure)
         │
-Phase 2: Remove Barriers
-  06 JSON/Folder Upload ───── no repo needed
-  11a Lint: Untokenized ───── no repo needed, mode toggle UI
+Phase 2: Token Sources ✅
+  06 JSON Paste ──────────── ✅ complete (unified source abstraction)
+  07 Multi-Provider + URL + npm ── ✅ complete (6 source types)
         │
-Phase 3: Platform Expansion
-  07 Multi-Provider ─────┬─── provider abstraction
-  11b Lint: Value Mismatch│── builds on 07
-  10 Figma Variables ─────┘── alternative native source
+Phase 3: Linting & Variables
+  11a Lint: Untokenized ───── mode toggle UI, no repo needed
+  11b Lint: Value Mismatch ── uses token source abstraction
+  10 Figma Variables ──────── alternative native source
         │
 Phase 4: Analysis
   02 Unused Token Finder ──── reverse analysis
@@ -193,7 +187,6 @@ Phase 5: Reporting
 ```
 
 **Key dependency chains:**
-- `07 → 11b`: Provider abstraction must be stable before lint value mismatch check
 - `04 → 05`: Airtable integration builds on export patterns from JSON/CSV export
 - `01 → 11`: Missing Token Detector superseded by Lint Mode's untokenized layers check
 
@@ -203,8 +196,8 @@ Phase 5: Reporting
 
 ### Shared Infrastructure Needs
 
-1. **Provider Abstraction (Phase 3)**
-   - Normalize token fetching across GitHub, GitLab, BitBucket, custom URLs
+1. **~~Provider Abstraction~~ (Phase 2)** ✅
+   - Unified `TokenSource` interface across GitHub, GitLab, BitBucket, URL, npm, JSON
    - Consumed by Match mode, Lint mode (value mismatch), and future analysis features
 
 2. **Token Usage Index**
@@ -233,8 +226,8 @@ Phase 5: Reporting
 | Version | Phase | Features | Focus |
 |---------|-------|----------|-------|
 | ~~v1.2~~ | ~~1~~ | ~~09, 08~~ | ~~Polish: exclusions, background indexing~~ ✅ |
-| v1.3 | 2 | 06, 11a | Remove barriers: JSON upload, lint mode + untokenized check |
-| v1.4 | 3 | 07, 11b, 10 | Platform expansion: multi-provider, lint value mismatch, Figma Variables |
+| ~~v1.3~~ | ~~2~~ | ~~06, 07~~ | ~~Token sources: JSON paste, multi-provider, URL, npm~~ ✅ |
+| v1.4 | 3 | 11a, 11b, 10 | Linting & Variables: lint mode, Figma Variables |
 | v1.5 | 4 | 02 | Analysis: unused token finder |
 | v1.6 | 5 | 04, 03, 05 | Reporting: export, statistics, Airtable |
 

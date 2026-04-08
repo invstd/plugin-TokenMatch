@@ -5,6 +5,8 @@
 
 import { TokenParser } from './token-parser';
 import { ParsedTokens, TokenFile } from '../types/tokens';
+import { decodeBase64Content } from './sources/shared/base64';
+import { isExcludedFile } from './sources/shared/file-filter';
 
 export interface GitHubFileContent {
   name: string;
@@ -160,67 +162,11 @@ export class GitHubTokenService {
   }
 
   /**
-   * Decode base64 content from GitHub API
-   * Note: Figma plugins don't have atob, so we implement it manually
+   * Decode base64 content from GitHub API.
+   * Delegates to shared utility for cross-source reuse.
    */
   decodeBase64Content(encodedContent: string): string {
-    try {
-      // Remove whitespace (GitHub API returns base64 with newlines)
-      const clean = encodedContent.replace(/\s/g, '');
-      
-      // Decode base64 to binary string
-      let binaryString: string;
-      if (typeof atob === 'function') {
-        binaryString = atob(clean);
-      } else {
-        // Fallback manual decode for environments without atob
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-        binaryString = '';
-        let i = 0;
-        const cleanNoPad = clean.replace(/=+$/, '');
-        while (i < cleanNoPad.length) {
-          const enc1 = chars.indexOf(cleanNoPad.charAt(i++));
-          const enc2 = chars.indexOf(cleanNoPad.charAt(i++));
-          const enc3 = chars.indexOf(cleanNoPad.charAt(i++));
-          const enc4 = chars.indexOf(cleanNoPad.charAt(i++));
-          const bitmap = (enc1 << 18) | (enc2 << 12) | ((enc3 & 63) << 6) | (enc4 & 63);
-          binaryString += String.fromCharCode((bitmap >> 16) & 255);
-          if (enc3 !== -1) binaryString += String.fromCharCode((bitmap >> 8) & 255);
-          if (enc4 !== -1) binaryString += String.fromCharCode(bitmap & 255);
-        }
-      }
-      
-      // Convert binary string to UTF-8
-      let result: string;
-      if (typeof TextDecoder !== 'undefined') {
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        result = new TextDecoder('utf-8').decode(bytes);
-      } else {
-        // Fallback: decodeURIComponent + escape trick for UTF-8
-        try {
-          result = decodeURIComponent(escape(binaryString));
-        } catch {
-          result = binaryString;
-        }
-      }
-      
-      // Clean up common issues:
-      // 1. Remove BOM (Byte Order Mark)
-      if (result.charCodeAt(0) === 0xFEFF) {
-        result = result.slice(1);
-      }
-      // 2. Remove null bytes
-      result = result.replace(/\0/g, '');
-      // 3. Trim whitespace
-      result = result.trim();
-      
-      return result;
-    } catch (error) {
-      throw new Error(`Failed to decode base64 content: ${error}`);
-    }
+    return decodeBase64Content(encodedContent);
   }
 
   /**
@@ -450,34 +396,12 @@ export class GitHubTokenService {
     return parsedTokens;
   }
 
-  // ============================================================================
-  // OPTIMIZED: Pre-compiled exclude patterns (compiled once at class level)
-  // ============================================================================
-  private static readonly EXCLUDE_PATTERNS = [
-    /package\.json$/i,
-    /package-lock\.json$/i,
-    /tsconfig\.json$/i,
-    /\.config\.json$/i,
-    /eslint.*\.json$/i,
-    /prettier.*\.json$/i,
-    /jest\.config\.json$/i,
-    /webpack\.config\.json$/i,
-    /^\$metadata\.json$/i,
-    /^\$themes\.json$/i,
-    /\(ignore\)\.json$/i,
-    /node_modules\//i,
-    /\.github\//i,
-    /\.vscode\//i
-  ];
-
   /**
-   * Check if a file should be excluded from token detection
+   * Check if a file should be excluded from token detection.
+   * Delegates to shared utility for cross-source reuse.
    */
   private isExcludedFile(filePath: string): boolean {
-    const fileName = filePath.split('/').pop()?.toLowerCase() || '';
-    return GitHubTokenService.EXCLUDE_PATTERNS.some(pattern => 
-      pattern.test(fileName) || pattern.test(filePath)
-    );
+    return isExcludedFile(filePath);
   }
 
   /**
