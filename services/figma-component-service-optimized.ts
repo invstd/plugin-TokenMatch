@@ -44,6 +44,8 @@ export interface ScanOptions {
   usePersistentCache?: boolean;
   /** Specific page names to scan (empty = all) */
   pageFilter?: string[];
+  /** Cancellation token — set cancelled to true to stop scan early */
+  cancelToken?: { cancelled: boolean };
 }
 
 export interface ScanProgress {
@@ -146,6 +148,20 @@ export class FigmaComponentServiceOptimized {
   }
 
   /**
+   * Get all in-memory cache keys (for targeted invalidation)
+   */
+  getCacheKeys(): string[] {
+    return Array.from(this.cache.keys());
+  }
+
+  /**
+   * Invalidate a single in-memory cache entry by key
+   */
+  invalidateCacheEntry(key: string): void {
+    this.cache.delete(key);
+  }
+
+  /**
    * Get document version information for cache invalidation
    * Uses document ID and a hash of page names/IDs as a proxy for version
    */
@@ -183,39 +199,48 @@ export class FigmaComponentServiceOptimized {
     pageNames: string[]
   ): Promise<ComponentProperties[] | null> {
     try {
-      const cacheKey = this.getPersistentCacheKey(tokenType, pageNames);
-      const cached = await figma.clientStorage.getAsync(cacheKey) as PersistentCacheEntry | null;
+      const result = await this.tryPersistentCacheKey(tokenType, pageNames);
+      if (result) return result;
 
-      if (!cached) return null;
-
-      // Validate cache against document version
-      const currentVersion = this.getDocumentVersion();
-
-      // Cache is valid if:
-      // 1. Document version matches (no major changes)
-      // 2. Edit session matches (same document instance)
-      // 3. Not expired (5 minutes)
-      const isValid =
-        cached.documentVersion === currentVersion.documentVersion &&
-        cached.editSessionId === currentVersion.editSessionId &&
-        Date.now() - cached.timestamp < this.cacheMaxAge;
-
-      if (isValid) {
-        if (this.debugLogging) {
-          console.log(`[Cache] HIT - Persistent cache valid for ${tokenType} (${pageNames.length} pages)`);
-        }
-        return cached.components;
-      } else {
-        if (this.debugLogging) {
-          console.log(`[Cache] MISS - Invalidated (version: ${cached.documentVersion} vs ${currentVersion.documentVersion})`);
-        }
-        // Clean up invalid cache
-        await figma.clientStorage.deleteAsync(cacheKey);
+      // Fall back to 'all' cache entry (e.g. from background warm-up)
+      if (tokenType !== 'all') {
+        const allResult = await this.tryPersistentCacheKey('all', pageNames);
+        if (allResult) return allResult;
       }
     } catch (error) {
       if (this.debugLogging) {
         console.error('Error reading persistent cache:', error);
       }
+    }
+    return null;
+  }
+
+  private async tryPersistentCacheKey(
+    tokenType: string,
+    pageNames: string[]
+  ): Promise<ComponentProperties[] | null> {
+    const cacheKey = this.getPersistentCacheKey(tokenType, pageNames);
+    const cached = await figma.clientStorage.getAsync(cacheKey) as PersistentCacheEntry | null;
+
+    if (!cached) return null;
+
+    const currentVersion = this.getDocumentVersion();
+
+    const isValid =
+      cached.documentVersion === currentVersion.documentVersion &&
+      cached.editSessionId === currentVersion.editSessionId &&
+      Date.now() - cached.timestamp < this.cacheMaxAge;
+
+    if (isValid) {
+      if (this.debugLogging) {
+        console.log(`[Cache] HIT - Persistent cache valid for ${tokenType} (${pageNames.length} pages)`);
+      }
+      return cached.components;
+    } else {
+      if (this.debugLogging) {
+        console.log(`[Cache] MISS - Invalidated (version: ${cached.documentVersion} vs ${currentVersion.documentVersion})`);
+      }
+      await figma.clientStorage.deleteAsync(cacheKey);
     }
     return null;
   }
@@ -336,7 +361,8 @@ export class FigmaComponentServiceOptimized {
       maxDepth = 3,
       useCache = true,
       usePersistentCache = true,
-      pageFilter = []
+      pageFilter = [],
+      cancelToken
     } = options;
 
     const pages = figma.root.children.filter(p => p.type === 'PAGE');
@@ -383,8 +409,13 @@ export class FigmaComponentServiceOptimized {
     }
 
     for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+      // Check for cancellation (e.g. background warm-up cancelled by user scan)
+      if (cancelToken?.cancelled) {
+        break;
+      }
+
       const page = pagesToScan[pageIndex];
-      
+
       // Report progress
       onProgress?.({
         currentPage: pageIndex + 1,
@@ -1301,11 +1332,25 @@ export class FigmaComponentServiceOptimized {
 
   /**
    * Get from cache if valid
+   * Falls back to 'all' tokenType entry if specific type misses,
+   * since 'all' extracts a superset of every specific type.
    */
   private getFromCache(key: string): ComponentProperties[] | null {
     const entry = this.cache.get(key);
     if (entry && Date.now() - entry.timestamp < this.cacheMaxAge) {
       return entry.components;
+    }
+    // Fall back to 'all' cache entry (e.g. from background warm-up)
+    const dashIndex = key.lastIndexOf('-');
+    if (dashIndex !== -1) {
+      const pageId = key.substring(0, dashIndex);
+      const tokenType = key.substring(dashIndex + 1);
+      if (tokenType !== 'all') {
+        const allEntry = this.cache.get(`${pageId}-all`);
+        if (allEntry && Date.now() - allEntry.timestamp < this.cacheMaxAge) {
+          return allEntry.components;
+        }
+      }
     }
     return null;
   }

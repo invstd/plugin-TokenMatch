@@ -1,4 +1,4 @@
-import { render, Button, Textbox, Dropdown, IconButton, Text, Stack, Container, Inline, VerticalSpace, Muted } from '@create-figma-plugin/ui';
+import { render, Button, Textbox, Dropdown, IconButton, Text, Stack, Container, Inline, VerticalSpace, Muted, Checkbox } from '@create-figma-plugin/ui';
 import { h } from 'preact';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'preact/hooks';
 import { on, emit } from '@create-figma-plugin/utilities';
@@ -176,6 +176,15 @@ function Plugin() {
   // Page filter for selective scanning
   const [pageFilter, setPageFilter] = useState('');
   
+  // Token path exclusions (feature: exclude primitives from list)
+  const [excludedCount, setExcludedCount] = useState(0);
+  const [excludedPaths, setExcludedPaths] = useState<Set<string>>(new Set());
+  const [showExcluded, setShowExcluded] = useState(false);
+  const [exclusionConfig, setExclusionConfig] = useState<any>(null);
+  const [exclusionPreview, setExclusionPreview] = useState<{ totalTokens: number; excludedCount: number } | null>(null);
+  const [newExclusionPattern, setNewExclusionPattern] = useState('');
+  const [patternTestResult, setPatternTestResult] = useState<{ matchCount: number; sampleMatches: string[] } | null>(null);
+  
   // Debounced token search (300ms delay)
   const debouncedTokenSearch = useDebounce(tokenSearch, 300);
 
@@ -343,6 +352,8 @@ function Plugin() {
         setFileCount(totalFiles);
         setPerFileCounts(perFileCounts || []);
         setParseErrors(errors || []);
+        setExcludedCount(msg.excludedCount ?? 0);
+        setExcludedPaths(new Set(msg.excludedPaths || []));
         setError(null);
         setLoading(false);
         
@@ -421,6 +432,22 @@ function Plugin() {
         setToast(msg.error || 'Could not create collection');
         setTimeout(() => setToast(null), 3000);
       }
+    });
+
+    on('exclusion-config', (msg: any) => {
+      setExclusionConfig(msg.config ?? null);
+      setExclusionPreview(msg.preview ?? null);
+    });
+
+    on('exclusion-config-saved', () => {
+      emit('get-exclusion-config');
+    });
+
+    on('exclusion-pattern-test-result', (msg: any) => {
+      setPatternTestResult({
+        matchCount: msg.matchCount ?? 0,
+        sampleMatches: msg.sampleMatches ?? []
+      });
     });
   }, []);
 
@@ -603,15 +630,27 @@ function Plugin() {
   };
 
   // Use debounced search for filtering (prevents lag during typing)
+  // When exclusions are on and showExcluded is false, exclude tokens in excludedPaths
   const filteredTokens = useMemo(() => {
+    let list = fetchedTokens;
+    if (!showExcluded && excludedPaths.size > 0) {
+      list = list.filter(t => !excludedPaths.has(getTokenFullPath(t)));
+    }
     if (debouncedTokenSearch.length === 0) return [];
-    return fetchedTokens.filter(t => {
+    return list.filter(t => {
       const fullPath = getTokenFullPath(t);
       const value = safeString(t.value);
       return matchesSearch(fullPath, debouncedTokenSearch) || matchesSearch(value, debouncedTokenSearch);
     });
-  }, [fetchedTokens, debouncedTokenSearch]);
+  }, [fetchedTokens, debouncedTokenSearch, showExcluded, excludedPaths]);
   
+  // Load exclusion config when opening settings
+  useEffect(() => {
+    if (currentView === 'settings') {
+      emit('get-exclusion-config');
+    }
+  }, [currentView]);
+
   // Reset visible count when results change
   useEffect(() => {
     setVisibleResultsCount(VISIBLE_RESULTS_LIMIT);
@@ -643,12 +682,249 @@ function Plugin() {
       height: '100vh',
       overflow: 'hidden'
     }}>
-      {/* Scrollable content area with custom scrollbar */}
+      {/* Settings view - own scroll container for proper sticky header/footer */}
+      {currentView === 'settings' && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div className="custom-scroll-container" style={{ flex: 1, position: 'relative' }}>
+          <div className="custom-scroll-content">
+            {/* Sticky header */}
+            <div style={{
+              position: 'sticky',
+              top: 0,
+              zIndex: 10,
+              padding: '10px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: 'var(--figma-color-bg-secondary)',
+              borderBottom: '1px solid var(--figma-color-border)',
+            }}>
+              <Text style={{ fontSize: '13px', fontWeight: '600' }}>GitHub Settings</Text>
+              <Button onClick={handleSaveConfig} disabled={loading || !selectedBranch}>
+                Save
+              </Button>
+            </div>
+
+            {/* Settings content */}
+            <Container space="medium" style={{ marginTop: '16px', paddingBottom: '16px' }}>
+              <Stack space="medium">
+                {settingsError && (
+                  <div style={{ padding: '12px', backgroundColor: 'var(--figma-color-bg-danger)', borderRadius: '6px' }}>
+                    <Text>{settingsError}</Text>
+                  </div>
+                )}
+
+                <Stack space="small">
+                  <Text>Repository URL</Text>
+                  <Textbox
+                    value={repoUrl}
+                    placeholder="https://github.com/owner/repo"
+                    onValueInput={setRepoUrl}
+                  />
+                </Stack>
+
+                <Stack space="small">
+                  <Text>Personal Access Token</Text>
+                  <Textbox
+                    value={token}
+                    placeholder="GitHub token with repo access"
+                    onValueInput={setToken}
+                    password
+                  />
+                </Stack>
+
+                <Stack space="small">
+                  <Text>Directory Path (optional)</Text>
+                  <Textbox
+                    value={filePath}
+                    placeholder="Leave empty for root"
+                    onValueInput={setFilePath}
+                  />
+                </Stack>
+
+                <Button onClick={handleTestConnection} disabled={loading}>
+                  {loading ? loadingMessage || 'Testing...' : 'Test Connection & Scan Files'}
+                </Button>
+
+                <Stack space="small">
+                  <Text>Branch</Text>
+                  <Dropdown
+                    value={branches.includes(selectedBranch || '') ? selectedBranch : null}
+                    options={branches.length > 0 ? branches.map(b => ({
+                      value: b,
+                      text: b === selectedBranch && tokenCount > 0
+                        ? `${b} (${tokenCount} token${tokenCount !== 1 ? 's' : ''}${excludedCount > 0 ? `, ${excludedCount} excluded` : ''})`
+                        : b
+                    })) : [{ value: '', text: '' }]}
+                    placeholder={branches.length > 0 ? "Select branch..." : "Test connection first"}
+                    disabled={branches.length === 0 || loading}
+                    onValueChange={(value) => {
+                      if (value && value !== '' && value !== selectedBranch) {
+                        handleBranchSelect(value);
+                      }
+                    }}
+                  />
+                </Stack>
+
+                {!loading && fileCount > 0 && tokenCount > 0 && (
+                  <div style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--figma-color-border)', fontSize: '11px', color: 'var(--figma-color-text-secondary)' }}>
+                    Found {tokenCount} token{tokenCount !== 1 ? 's' : ''} in {fileCount} file{fileCount !== 1 ? 's' : ''}
+                  </div>
+                )}
+
+                {!loading && fileCount > 0 && tokenCount === 0 && (
+                  <div style={{
+                    padding: '12px',
+                    backgroundColor: 'var(--figma-color-bg-warning)',
+                    borderRadius: '6px'
+                  }}>
+                    <Text style={{ fontSize: '12px', fontWeight: '600' }}>
+                      ⚠ Found {fileCount} file{fileCount !== 1 ? 's' : ''} but no tokens parsed
+                    </Text>
+                    {parseErrors.length > 0 && (
+                      <div style={{ marginTop: '8px' }}>
+                        {parseErrors.slice(0,3).map((e, i) => (
+                          <Text key={i} style={{ fontSize: '10px', color: 'var(--figma-color-text-secondary)', display: 'block' }}>
+                            {e.file}: {e.message}
+                          </Text>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Token Path Exclusions */}
+                <div style={{ borderTop: '1px solid var(--figma-color-border)', paddingTop: '24px', marginTop: '16px' }}>
+                  <Text style={{ fontSize: '13px', fontWeight: '600' }}>Token Path Exclusions</Text>
+                  <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', marginBottom: '12px', display: 'block', marginTop: '12px' }}>
+                    Exclude primitive or internal tokens from matching to focus on semantic tokens.
+                  </Text>
+                  <div style={{ marginBottom: '12px' }}>
+                    <Checkbox
+                      value={exclusionConfig?.enabled ?? false}
+                      onValueChange={(checked) => {
+                        const next = { ...exclusionConfig, enabled: checked };
+                        setExclusionConfig(next);
+                        emit('save-exclusion-config', { config: next });
+                      }}
+                    >
+                      <Text style={{ fontSize: '12px', fontWeight: '500' }}>Enable token exclusions</Text>
+                    </Checkbox>
+                  </div>
+                  {exclusionConfig?.enabled && (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px', marginBottom: '8px' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <Textbox
+                            value={newExclusionPattern}
+                            placeholder="e.g. colors.base.**"
+                            onValueInput={(value) => {
+                              setNewExclusionPattern(value);
+                              if (value.trim()) {
+                                emit('test-exclusion-pattern', { pattern: value.trim() });
+                              } else {
+                                setPatternTestResult(null);
+                              }
+                            }}
+                          />
+                        </div>
+                        <Button
+                          onClick={() => {
+                            if (newExclusionPattern.trim()) {
+                              emit('add-exclusion-pattern', { pattern: newExclusionPattern.trim() });
+                              setNewExclusionPattern('');
+                              setPatternTestResult(null);
+                            }
+                          }}
+                          disabled={!newExclusionPattern.trim()}
+                        >
+                          Add
+                        </Button>
+                      </div>
+                      {(exclusionConfig?.patterns?.filter((p: any) => p.source === 'custom') || []).length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                          {(exclusionConfig.patterns.filter((p: any) => p.source === 'custom')).map((p: any) => (
+                            <div
+                              key={p.id}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '4px 8px',
+                                backgroundColor: 'var(--figma-color-bg-secondary)',
+                                borderRadius: '4px',
+                                maxWidth: '100%'
+                              }}
+                            >
+                              <span style={{
+                                fontSize: '11px',
+                                fontWeight: '500',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                minWidth: 0,
+                                color: 'var(--figma-color-text)'
+                              }}>{p.pattern}</span>
+                              <div
+                                onClick={() => emit('remove-exclusion-pattern', { patternId: p.id })}
+                                style={{
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0,
+                                  width: '16px',
+                                  height: '16px',
+                                  borderRadius: '2px'
+                                }}
+                              >
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                                  <path d="M8 2L2 8M2 2L8 8" stroke="var(--figma-color-text-secondary)" stroke-width="1.5" stroke-linecap="round"/>
+                                </svg>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {patternTestResult && newExclusionPattern.trim() && (
+                        <Text style={{ fontSize: '10px', color: 'var(--figma-color-text-secondary)', marginBottom: '8px', display: 'block' }}>
+                          Matches {patternTestResult.matchCount} token{patternTestResult.matchCount !== 1 ? 's' : ''}
+                          {patternTestResult.sampleMatches?.length > 0 && (
+                            <span style={{ display: 'block', marginTop: '4px' }}>
+                              {patternTestResult.sampleMatches.slice(0, 3).map((path: string, i: number) => (
+                                <span key={i} style={{ display: 'block' }}>• {path}</span>
+                              ))}
+                              {patternTestResult.matchCount > 3 && <span>… and {patternTestResult.matchCount - 3} more</span>}
+                            </span>
+                          )}
+                        </Text>
+                      )}
+                      {(exclusionPreview || (fetchedTokens.length > 0 && excludedCount >= 0)) && (
+                        <div style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--figma-color-border)' }}>
+                          {exclusionPreview
+                            ? `${exclusionPreview.totalTokens} tokens loaded, ${exclusionPreview.excludedCount} excluded${exclusionPreview.totalTokens ? ` (${Math.round((100 * exclusionPreview.excludedCount) / exclusionPreview.totalTokens)}%)` : ''}`
+                            : `${fetchedTokens.length} tokens loaded, ${excludedCount} excluded${fetchedTokens.length ? ` (${Math.round((100 * excludedCount) / fetchedTokens.length)}%)` : ''}`
+                          }
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </Stack>
+            </Container>
+
+          </div>
+          </div>
+        </div>
+      )}
+
+      {/* Scrollable content area for main/info views */}
+      {currentView !== 'settings' && (
       <div className="custom-scroll-container" style={{ flex: 1, position: 'relative' }}>
-        <div 
+        <div
           ref={mainScrollRef}
           className="custom-scroll-content"
-          style={{ 
+          style={{
             paddingBottom: '36px' // Space for footer
           }}
         >
@@ -656,7 +932,7 @@ function Plugin() {
           <Stack space="medium">
         {currentView === 'main' ? (
           <Stack space="medium">
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                   <path d="M21 16V8C20.9996 7.64927 20.9071 7.30481 20.7315 7.00116C20.556 6.69751 20.3037 6.44536 20 6.27L13 2.27C12.696 2.09446 12.3511 2.00205 12 2.00205C11.6489 2.00205 11.304 2.09446 11 2.27L4 6.27C3.69626 6.44536 3.44398 6.69751 3.26846 7.00116C3.09294 7.30481 3.00036 7.64927 3 8V16C3.00036 16.3507 3.09294 16.6952 3.26846 16.9988C3.44398 17.3025 3.69626 17.5546 4 17.73L11 21.73C11.304 21.9055 11.6489 21.9979 12 21.9979C12.3511 21.9979 12.696 21.9055 13 21.73L20 17.73C20.3037 17.5546 20.556 17.3025 20.7315 16.9988C20.9071 16.6952 20.9996 16.3507 21 16Z" stroke="var(--figma-color-text-brand)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
@@ -704,10 +980,10 @@ function Plugin() {
                   {branches.length > 0 ? (
                     <Dropdown
                       value={branches.includes(selectedBranch || '') ? selectedBranch : null}
-                      options={branches.map(b => ({ 
-                        value: b, 
+                      options={branches.map(b => ({
+                        value: b,
                         text: b === selectedBranch && tokenCount > 0
-                          ? `${b} (${tokenCount} token${tokenCount !== 1 ? 's' : ''})`
+                          ? `${b} (${tokenCount} token${tokenCount !== 1 ? 's' : ''}${excludedCount > 0 ? `, ${excludedCount} excluded` : ''})`
                           : b
                       }))}
                       placeholder="Select ..."
@@ -805,31 +1081,31 @@ function Plugin() {
                 )}
               </div>
               {selectedToken && (
-                <div style={{ 
+                <div style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
-                  padding: '4px 8px', 
-                  backgroundColor: 'var(--figma-color-bg-brand)', 
+                  padding: '4px 8px',
+                  backgroundColor: 'var(--figma-color-bg-secondary)',
                   borderRadius: '4px',
                   maxWidth: '100%',
                   marginTop: '8px'
                 }}>
-                  <span style={{ 
-                    fontSize: '11px', 
+                  <span style={{
+                    fontSize: '11px',
                     fontWeight: '500',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                     flex: '1 1 auto',
                     minWidth: 0,
-                    color: '#ffffff'
+                    color: 'var(--figma-color-text)'
                   }}>
                     ✓ {getTokenFullPath(selectedToken)}
                   </span>
-                  <div 
-                    onClick={handleClearToken} 
-                    style={{ 
+                  <div
+                    onClick={handleClearToken}
+                    style={{
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
@@ -841,7 +1117,7 @@ function Plugin() {
                     }}
                   >
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                      <path d="M8 2L2 8M2 2L8 8" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+                      <path d="M8 2L2 8M2 2L8 8" stroke="var(--figma-color-text-secondary)" stroke-width="1.5" stroke-linecap="round"/>
                     </svg>
                   </div>
                 </div>
@@ -1347,196 +1623,10 @@ function Plugin() {
               </div>
             )}
           </Stack>
-        ) : currentView === 'settings' ? (
-          <Stack space="medium">
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: '13px', fontWeight: '600' }}>GitHub Settings</Text>
-              <button 
-                onClick={() => setCurrentView('main')}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '28px',
-                  height: '28px',
-                  border: '1px solid var(--figma-color-border)',
-                  borderRadius: '6px',
-                  background: 'transparent',
-                  cursor: 'pointer',
-                  color: 'var(--figma-color-text)',
-                  transition: 'background-color 0.15s ease'
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M12 4L4 12M4 4L12 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </button>
-            </div>
-
-            {settingsError && (
-              <div style={{ padding: '12px', backgroundColor: 'var(--figma-color-bg-danger)', borderRadius: '6px' }}>
-                <Text>{settingsError}</Text>
-              </div>
-            )}
-
-            <Stack space="small">
-              <Text>Repository URL</Text>
-              <Textbox
-                value={repoUrl}
-                placeholder="https://github.com/owner/repo"
-                onValueInput={setRepoUrl}
-              />
-            </Stack>
-
-            <Stack space="small">
-              <Text>Personal Access Token</Text>
-              <Textbox
-                value={token}
-                placeholder="GitHub token with repo access"
-                onValueInput={setToken}
-                password
-              />
-            </Stack>
-
-            <Stack space="small">
-              <Text>Directory Path (optional)</Text>
-              <Textbox
-                value={filePath}
-                placeholder="Leave empty for root"
-                onValueInput={setFilePath}
-              />
-            </Stack>
-
-            <Button onClick={handleTestConnection} disabled={loading}>
-              {loading ? loadingMessage || 'Testing...' : 'Test Connection & Scan Files'}
-            </Button>
-
-            <Stack space="small">
-              <Text>Branch</Text>
-              <Dropdown
-                value={branches.includes(selectedBranch || '') ? selectedBranch : null}
-                options={branches.length > 0 ? branches.map(b => ({
-                  value: b,
-                  text: b === selectedBranch && tokenCount > 0
-                    ? `${b} (${tokenCount} token${tokenCount !== 1 ? 's' : ''})`
-                    : b
-                })) : [{ value: '', text: '' }]}
-                placeholder={branches.length > 0 ? "Select branch..." : "Test connection first"}
-                disabled={branches.length === 0 || loading}
-                onValueChange={(value) => {
-                  if (value && value !== '' && value !== selectedBranch) {
-                    // Use handleBranchSelect to also re-fetch tokens
-                    handleBranchSelect(value);
-                  }
-                }}
-              />
-            </Stack>
-
-            {!loading && fileCount > 0 && tokenCount > 0 && (
-              <div style={{ 
-                padding: '12px', 
-                backgroundColor: 'var(--figma-color-bg-success)', 
-                borderRadius: '6px',
-                border: '1px solid var(--figma-color-border-success)'
-              }}>
-                <Text style={{ fontSize: '12px', fontWeight: '600', color: 'var(--figma-color-text-onsuccess)' }}>
-                  ✓ Found {tokenCount} token{tokenCount !== 1 ? 's' : ''} in {fileCount} file{fileCount !== 1 ? 's' : ''}
-                </Text>
-              </div>
-            )}
-            
-            {!loading && fileCount > 0 && tokenCount === 0 && (
-              <div style={{ 
-                padding: '12px', 
-                backgroundColor: 'var(--figma-color-bg-warning)', 
-                borderRadius: '6px'
-              }}>
-                <Text style={{ fontSize: '12px', fontWeight: '600' }}>
-                  ⚠ Found {fileCount} file{fileCount !== 1 ? 's' : ''} but no tokens parsed
-                </Text>
-                {parseErrors.length > 0 && (
-                  <div style={{ marginTop: '8px' }}>
-                    {parseErrors.slice(0,3).map((e, i) => (
-                      <Text key={i} style={{ fontSize: '10px', color: 'var(--figma-color-text-secondary)', display: 'block' }}>
-                        {e.file}: {e.message}
-                      </Text>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <Button onClick={handleSaveConfig} disabled={loading || !selectedBranch}>
-              Save Configuration
-            </Button>
-            
-            <Button onClick={() => {
-              emit('clear-config');
-              setRepoUrl('');
-              setToken('');
-              setFilePath('');
-              setSelectedBranch(null);
-              setSavedBranch(null);
-              setBranches([]);
-              setFetchedTokens([]);
-              setSelectedToken(null);
-              setTokenSearch('');
-              setIsConfigured(false);
-              setFileCount(0);
-              setTokenCount(0);
-              setSampleFiles([]);
-              setSettingsError(null);
-            }} 
-            secondary
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.backgroundColor = '';
-            }}
-            >
-              Clear All Data
-            </Button>
-            
-            {selectedBranch && tokenCount > 0 && (
-              <Button 
-                onClick={() => {
-                  if (repoUrl && token && selectedBranch) {
-                    setLoading(true);
-                    setLoadingMessage('Re-fetching tokens...');
-                    emit('fetch-tokens', { 
-                      repoUrl, 
-                      token, 
-                      branch: selectedBranch, 
-                      filePath: filePath || '',
-                      forceRefresh: true 
-                    });
-                  }
-                }} 
-                secondary
-                disabled={loading}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)';
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = '';
-                }}
-              >
-                Clear Cache & Refresh
-              </Button>
-            )}
-
-          </Stack>
-        ) : (
+        ) : currentView === 'info' ? (
           /* Information Page */
           <Stack space="medium">
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ fontSize: '13px', fontWeight: '600' }}>About TokenMatch</Text>
               <button 
                 onClick={() => setCurrentView('main')}
@@ -1642,7 +1732,7 @@ function Plugin() {
               </Text>
             </div>
           </Stack>
-        )}
+        ) : null}
       </Stack>
       
       {/* Toast notification */}
@@ -1671,6 +1761,7 @@ function Plugin() {
         </div>
       )}
       </Container>
+
         </div>
         {/* Custom scrollbar track and thumb */}
         {customScrollbar.showScrollbar && (
@@ -1690,6 +1781,7 @@ function Plugin() {
           </div>
         )}
       </div>
+      )}
 
     {/* Fixed Footer */}
     <div style={{

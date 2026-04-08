@@ -2,16 +2,23 @@ import { GitHubTokenService } from '../services/github-token-service';
 import { FigmaComponentService } from '../services/figma-component-service';
 import { FigmaComponentServiceOptimized, ScanOptions } from '../services/figma-component-service-optimized';
 import { TokenMatchingService } from '../services/token-matching-service';
-import { ParsedTokens } from '../types/tokens';
+import { ExclusionService } from '../services/exclusion-service';
 import { showUI, on, emit } from '@create-figma-plugin/utilities';
+
+function tokenPathToString(t: { path?: string[] | string }): string {
+  if (Array.isArray(t.path)) return t.path.join('.');
+  return typeof t.path === 'string' ? t.path : '';
+}
 
 export default function () {
   // Show the plugin UI with resize enabled
   showUI({ width: 400, height: 550 }, { resizable: true });
 
-  // Load all pages in the background on startup
-  // This ensures pages are available for scanning when needed
-  figma.loadAllPagesAsync().catch((error) => {
+  // Load all pages, then register change tracking and start background warm-up
+  figma.loadAllPagesAsync().then(() => {
+    figma.on('documentchange', handleDocumentChange);
+    startBackgroundWarmUp();
+  }).catch((error) => {
     console.error('Error loading pages on startup:', error);
   });
 
@@ -27,43 +34,171 @@ const githubService = new GitHubTokenService();
 const figmaComponentService = new FigmaComponentService();
 const figmaComponentServiceOptimized = new FigmaComponentServiceOptimized();
 const tokenMatchingService = new TokenMatchingService();
+const exclusionService = new ExclusionService();
+
+// Last fetched token list (for exclusion preview and test-pattern)
+let lastFetchedTokens: any[] = [];
 
 // Use optimized service by default for better performance
 const USE_OPTIMIZED_SCANNER = true;
 
-// Track last known document version for change detection
-let lastKnownDocumentVersion: string | null = null;
+// ============================================================================
+// INTELLIGENT CACHE INVALIDATION via document change tracking
+// ============================================================================
+
+/** Page IDs modified since last scan — only these pages need re-scanning */
+const dirtyPageIds: Set<string> = new Set();
+
+/** Whether background warm-up is currently running */
+let backgroundWarmUpInProgress = false;
+
+/** Whether background warm-up has completed at least once */
+let backgroundWarmUpComplete = false;
+
+/** Cancel token for the current background warm-up */
+let warmUpCancelToken: { cancelled: boolean } = { cancelled: false };
+
+/** Debounce timer for re-warming dirty pages after document changes */
+let reWarmDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * Check if document has changed since last scan
- * Useful for detecting when cache should be invalidated
+ * Find the page ID that a node belongs to by walking up the parent chain
  */
-function hasDocumentChanged(): boolean {
-  // Create a simple version hash from page structure
-  const pages = figma.root.children
-    .filter(p => p.type === 'PAGE')
-    .map(p => p.id)
-    .join(',');
-
-  if (lastKnownDocumentVersion === null) {
-    lastKnownDocumentVersion = pages;
-    return false;
+function getPageIdForNode(node: BaseNode | { removed: true; id: string; type: string }): string | null {
+  if ('removed' in node) return null; // RemovedNode — can't determine page
+  let current: BaseNode | null = node as BaseNode;
+  while (current) {
+    if (current.type === 'PAGE') return current.id;
+    current = current.parent;
   }
-
-  const changed = pages !== lastKnownDocumentVersion;
-  lastKnownDocumentVersion = pages;
-  return changed;
+  return null;
 }
 
 /**
- * Clear component cache if document has changed
- * This provides automatic incremental invalidation
+ * Handle document changes — track which pages are dirty.
+ * DocumentChange is a union: node changes have .node, style changes have .style.
+ * Style changes (e.g. color style edits) could affect any page, so mark all dirty.
  */
-async function checkAndInvalidateCache(): Promise<void> {
-  if (hasDocumentChanged()) {
-    console.log('[Cache] Document changed, clearing component cache');
-    await figmaComponentServiceOptimized.clearCache();
+function handleDocumentChange(event: DocumentChangeEvent): void {
+  let markAllDirty = false;
+
+  for (const change of event.documentChanges) {
+    if ('node' in change) {
+      // Node change (CREATE, DELETE, PROPERTY_CHANGE)
+      const pageId = getPageIdForNode(change.node);
+      if (pageId) {
+        dirtyPageIds.add(pageId);
+      } else {
+        // Can't determine page (e.g. removed node) — mark all dirty
+        markAllDirty = true;
+        break;
+      }
+    } else {
+      // Style change — could affect components on any page
+      markAllDirty = true;
+      break;
+    }
   }
+
+  if (markAllDirty) {
+    for (const page of figma.root.children) {
+      if (page.type === 'PAGE') dirtyPageIds.add(page.id);
+    }
+  }
+
+  // Debounced re-warm: after 5 seconds of no changes, re-scan dirty pages
+  if (reWarmDebounceTimer) clearTimeout(reWarmDebounceTimer);
+  reWarmDebounceTimer = setTimeout(() => reWarmDirtyPages(), 5000);
+}
+
+/**
+ * Invalidate only dirty pages from cache, then clear dirty set.
+ * Called before user-triggered scans.
+ */
+async function invalidateDirtyPages(): Promise<void> {
+  if (dirtyPageIds.size === 0) return;
+
+  // Invalidate in-memory cache entries for dirty pages
+  const keysToDelete: string[] = [];
+  for (const key of figmaComponentServiceOptimized.getCacheKeys()) {
+    const dashIndex = key.lastIndexOf('-');
+    if (dashIndex !== -1) {
+      const pageId = key.substring(0, dashIndex);
+      if (dirtyPageIds.has(pageId)) {
+        keysToDelete.push(key);
+      }
+    }
+  }
+  for (const key of keysToDelete) {
+    figmaComponentServiceOptimized.invalidateCacheEntry(key);
+  }
+
+  // Invalidate persistent cache for dirty pages
+  const dirtyPageNames = figma.root.children
+    .filter(p => p.type === 'PAGE' && dirtyPageIds.has(p.id))
+    .map(p => p.name);
+
+  if (dirtyPageNames.length > 0) {
+    await figmaComponentServiceOptimized.invalidatePagesCache(dirtyPageNames);
+    console.log(`[Cache] Invalidated ${dirtyPageNames.length} dirty page(s): ${dirtyPageNames.join(', ')}`);
+  }
+
+  dirtyPageIds.clear();
+}
+
+/**
+ * Background warm-up: scan all pages to populate cache.
+ * Runs silently after plugin loads and after dirty pages settle.
+ */
+async function startBackgroundWarmUp(pageFilter?: string[]): Promise<void> {
+  if (backgroundWarmUpInProgress) return;
+
+  backgroundWarmUpInProgress = true;
+  warmUpCancelToken = { cancelled: false };
+
+  try {
+    const label = pageFilter ? `${pageFilter.length} dirty page(s)` : 'all pages';
+    console.log(`[WarmUp] Starting background indexing (${label})...`);
+
+    await figmaComponentServiceOptimized.scanAllComponentsOptimized({
+      tokenType: 'all',
+      useCache: true,
+      usePersistentCache: true,
+      chunkSize: 50, // Smaller chunks = more yields = less UI jank
+      maxDepth: 3,
+      includeChildren: true,
+      pageFilter,
+      cancelToken: warmUpCancelToken,
+    });
+
+    if (!warmUpCancelToken.cancelled) {
+      if (!pageFilter) backgroundWarmUpComplete = true;
+      console.log('[WarmUp] Background indexing complete');
+    } else {
+      console.log('[WarmUp] Background indexing cancelled');
+    }
+  } catch (error) {
+    console.error('[WarmUp] Background indexing failed:', error);
+  } finally {
+    backgroundWarmUpInProgress = false;
+  }
+}
+
+/**
+ * Re-warm only dirty pages in the background after document changes settle.
+ */
+async function reWarmDirtyPages(): Promise<void> {
+  if (dirtyPageIds.size === 0 || backgroundWarmUpInProgress) return;
+
+  const dirtyPageNames = figma.root.children
+    .filter(p => p.type === 'PAGE' && dirtyPageIds.has(p.id))
+    .map(p => p.name);
+
+  if (dirtyPageNames.length === 0) return;
+
+  // Invalidate dirty pages first, then re-warm them
+  await invalidateDirtyPages();
+  await startBackgroundWarmUp(dirtyPageNames);
 }
 
 // ============================================================================
@@ -237,6 +372,66 @@ on('save-config', async (msg: RepoConfig) => {
   await saveConfig(msg);
   emit('config-saved', { success: true });
 });
+
+  // ============================================================================
+  // Token path exclusions
+  // ============================================================================
+  on('get-exclusion-config', async () => {
+    const config = await exclusionService.loadConfig();
+    const presets = exclusionService.getPresets();
+    let preview: { totalTokens: number; excludedCount: number } | undefined;
+    if (lastFetchedTokens.length > 0) {
+      const result = exclusionService.applyExclusions(lastFetchedTokens);
+      preview = { totalTokens: lastFetchedTokens.length, excludedCount: result.excludedCount };
+    }
+    emit('exclusion-config', { config, presets, preview });
+  });
+
+  on('save-exclusion-config', async (msg: { config: any }) => {
+    await exclusionService.saveConfig(msg.config);
+    emit('exclusion-config-saved', {});
+  });
+
+  on('toggle-exclusion-preset', async (msg: { presetId: string; enabled: boolean }) => {
+    await exclusionService.togglePreset(msg.presetId, msg.enabled);
+    const config = await exclusionService.loadConfig();
+    const presets = exclusionService.getPresets();
+    emit('exclusion-config', { config, presets });
+  });
+
+  on('add-exclusion-pattern', async (msg: { pattern: string }) => {
+    await exclusionService.addPattern(msg.pattern);
+    const config = await exclusionService.loadConfig();
+    const presets = exclusionService.getPresets();
+    let preview: { totalTokens: number; excludedCount: number } | undefined;
+    if (lastFetchedTokens.length > 0) {
+      const result = exclusionService.applyExclusions(lastFetchedTokens);
+      preview = { totalTokens: lastFetchedTokens.length, excludedCount: result.excludedCount };
+    }
+    emit('exclusion-config', { config, presets, preview });
+  });
+
+  on('remove-exclusion-pattern', async (msg: { patternId: string }) => {
+    await exclusionService.removePattern(msg.patternId);
+    const config = await exclusionService.loadConfig();
+    const presets = exclusionService.getPresets();
+    let preview: { totalTokens: number; excludedCount: number } | undefined;
+    if (lastFetchedTokens.length > 0) {
+      const result = exclusionService.applyExclusions(lastFetchedTokens);
+      preview = { totalTokens: lastFetchedTokens.length, excludedCount: result.excludedCount };
+    }
+    emit('exclusion-config', { config, presets, preview });
+  });
+
+  on('test-exclusion-pattern', async (msg: { pattern: string }) => {
+    const matches = exclusionService.testPattern(msg.pattern, lastFetchedTokens);
+    const samplePaths = matches.slice(0, 10).map(tokenPathToString);
+    emit('exclusion-pattern-test-result', {
+      pattern: msg.pattern,
+      matchCount: matches.length,
+      sampleMatches: samplePaths
+    });
+  });
 
   // ============================================================================
   // OPTIMIZED: Pre-compiled regex patterns (compiled once, reused)
@@ -607,9 +802,15 @@ on('save-config', async (msg: RepoConfig) => {
             });
           }
           
+          lastFetchedTokens = cachedTokens;
+          await exclusionService.loadConfig();
+          const exclusionResult = exclusionService.applyExclusions(cachedTokens);
+          const excludedPaths = exclusionResult.excluded.map(tokenPathToString);
           emit('tokens-result', {
             success: true,
             tokens: cachedTokens,
+            excludedCount: exclusionResult.excludedCount,
+            excludedPaths,
             metadata: {
               ...cachedData.metadata,
               fromCache: true,
@@ -795,10 +996,17 @@ on('save-config', async (msg: RepoConfig) => {
         });
       }
 
+      lastFetchedTokens = allTokens;
+      await exclusionService.loadConfig();
+      const exclusionResult = exclusionService.applyExclusions(allTokens);
+      const excludedPaths = exclusionResult.excluded.map(tokenPathToString);
+
       // Send final result (UI may already have tokens from chunks)
       emit('tokens-result', {
         success: true,
         tokens: allTokens,
+        excludedCount: exclusionResult.excludedCount,
+        excludedPaths,
         metadata: {
           totalTokens,
           filesProcessed: filesProcessed,
@@ -891,8 +1099,14 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
       return;
     }
 
-    // Check for document changes and invalidate cache if needed
-    await checkAndInvalidateCache();
+    // Cancel background warm-up if running — user scan takes priority
+    if (backgroundWarmUpInProgress) {
+      warmUpCancelToken.cancelled = true;
+      console.log('[WarmUp] Cancelled — user scan takes priority');
+    }
+
+    // Invalidate only pages that changed since last scan
+    await invalidateDirtyPages();
 
     // Determine token type for optimized extraction
     const tokenType = token.type || 'all';
@@ -1065,6 +1279,11 @@ on('scan-components-for-token', async (msg: { token: any; scanAll?: boolean; sca
       success: false,
       error: error instanceof Error ? error.message : 'Failed to scan components for token'
     });
+  } finally {
+    // Restart background warm-up if it was cancelled and hasn't completed a full pass
+    if (!backgroundWarmUpComplete && !backgroundWarmUpInProgress) {
+      setTimeout(() => startBackgroundWarmUp(), 1000);
+    }
   }
 });
 

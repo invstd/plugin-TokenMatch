@@ -12,7 +12,7 @@ TokenMatch currently excels at finding components that use specific design token
 
 | Phase | Focus | Features |
 |-------|-------|----------|
-| **1 — Polish** | Finish & verify existing foundation | 09 (Exclude Token Paths), 08 (Pre-scan Components) |
+| **~~1 — Polish~~** | ~~Finish & verify existing foundation~~ | ~~09 (Exclude Token Paths), 08 (Background Indexing)~~ ✅ |
 | **2 — Remove Barriers** | Enable usage without a repository | 06 (JSON/Folder Upload), 11a (Lint: untokenized layers) |
 | **3 — Platform Expansion** | Broaden token sources & complete linting | 07 (Multi-Provider), 11b (Lint: value mismatch), 10 (Figma Variables) |
 | **4 — Analysis** | Reverse analysis & discovery | 02 (Unused Token Finder) |
@@ -113,33 +113,26 @@ TokenMatch currently excels at finding components that use specific design token
 
 ---
 
-### 8. Pre-scan Components — Phase 1
+### ~~8. Background Component Indexing~~ — Phase 1 ✅
 
-**Goal:** Settings-driven component pre-scanning for faster subsequent matching.
-
-**Key Capabilities:**
-- "Scan All Pages" button in settings with progress indicator
-- Persistent cache with smart invalidation
-- "Last scanned" indicator and optional re-scan before matching
-
-**Note:** The optimized component service with persistent caching already exists. Primary remaining work is the settings UX.
-
-**Implementation Reference:** [08-prescan-components.md](./roadmap/08-prescan-components.md)
+> **Completed.** Reimagined from a manual "Pre-scan Components" settings UI into invisible infrastructure. The plugin now automatically warms the component cache on startup, tracks document changes via `figma.on('documentchange')` to mark dirty pages, and delta-scans only modified pages on the next match. No user-facing UI — caching is entirely transparent.
+>
+> **Key implementation details:**
+> - Background warm-up chains after `figma.loadAllPagesAsync()` with `tokenType: 'all'`
+> - `documentchange` listener tracks dirty page IDs; debounced re-warm after 5s of inactivity
+> - User-triggered scans cancel background warm-up via `cancelToken` and take priority
+> - Cache key fallback: specific tokenType lookups fall back to `'all'` entries
+> - Targeted invalidation replaces the previous clear-everything approach
+>
+> **Implementation Reference:** [08-prescan-components.md](./roadmap/08-prescan-components.md) (original spec, superseded by implementation)
 
 ---
 
-### 9. Exclude Token Paths — Phase 1
+### ~~9. Exclude Token Paths~~ — Phase 1 ✅
 
-**Goal:** Filter out primitive/base tokens via configurable glob patterns.
-
-**Key Capabilities:**
-- Glob-style exclusion patterns
-- Quick presets (Primitives, Internal, Deprecated)
-- Real-time pattern testing and transparent excluded count
-
-**Note:** Core exclusion service is already implemented (`services/exclusion-service.ts`). Verify remaining UI integration and close if complete.
-
-**Implementation Reference:** [09-exclude-token-paths.md](./roadmap/09-exclude-token-paths.md)
+> **Completed.** Glob-style exclusion patterns with quick presets (Primitives, Internal, Deprecated), real-time pattern testing, and transparent excluded count. Core exclusion service (`services/exclusion-service.ts`) and UI integration are fully implemented.
+>
+> **Implementation Reference:** [09-exclude-token-paths.md](./roadmap/09-exclude-token-paths.md)
 
 ---
 
@@ -177,9 +170,9 @@ TokenMatch currently excels at finding components that use specific design token
 ## Feature Dependencies
 
 ```
-Phase 1: Polish
-  09 Exclude Token Paths ──── verify if already complete
-  08 Pre-scan Components ──── settings UX on existing cache
+Phase 1: Polish ✅
+  09 Exclude Token Paths ──── ✅ complete
+  08 Background Indexing ──── ✅ complete (invisible infrastructure)
         │
 Phase 2: Remove Barriers
   06 JSON/Folder Upload ───── no repo needed
@@ -239,7 +232,7 @@ Phase 5: Reporting
 
 | Version | Phase | Features | Focus |
 |---------|-------|----------|-------|
-| v1.2 | 1 | 09, 08 | Polish: exclusions (verify), pre-scan UX |
+| ~~v1.2~~ | ~~1~~ | ~~09, 08~~ | ~~Polish: exclusions, background indexing~~ ✅ |
 | v1.3 | 2 | 06, 11a | Remove barriers: JSON upload, lint mode + untokenized check |
 | v1.4 | 3 | 07, 11b, 10 | Platform expansion: multi-provider, lint value mismatch, Figma Variables |
 | v1.5 | 4 | 02 | Analysis: unused token finder |
