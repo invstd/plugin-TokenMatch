@@ -508,27 +508,29 @@ export class FigmaComponentService {
     const currentPage = figma.currentPage;
 
     // Process each selected node
+    const processedIds = new Set<string>();
     for (const node of nodes) {
       // Check if node has findAll method (only certain node types do)
       let nodeComponents: SceneNode[] = [];
       let instances: SceneNode[] = [];
-      
+
       if ('findAll' in node && typeof node.findAll === 'function') {
-        // Find all components and component sets within the selected node
+        // Find all components, component sets, and instances within the selected node
         nodeComponents = node.findAll(
           (n: SceneNode) => n.type === 'COMPONENT' || n.type === 'COMPONENT_SET'
         ) as SceneNode[];
-        // Find all component instances
         instances = node.findAll((n: SceneNode) => n.type === 'INSTANCE') as SceneNode[];
         totalInstances += instances.length;
       }
 
-      // Process each component
+      // Process components
       for (const component of nodeComponents) {
+        if (processedIds.has(component.id)) continue;
         try {
           const props = this.extractComponentProperties(component, currentPage.name);
           if (props) {
             components.push(props);
+            processedIds.add(component.id);
           }
         } catch (error) {
           this.errors.push({
@@ -539,15 +541,31 @@ export class FigmaComponentService {
         }
       }
 
-      // If the selected node itself is a component, include it
-      if (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET') {
+      // Process instances (they carry token references from their main component)
+      for (const instance of instances) {
+        if (processedIds.has(instance.id)) continue;
+        try {
+          const props = this.extractComponentProperties(instance, currentPage.name);
+          if (props) {
+            components.push(props);
+            processedIds.add(instance.id);
+          }
+        } catch (error) {
+          this.errors.push({
+            componentId: instance.id,
+            componentName: instance.name,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }
+
+      // If the selected node itself is a component or instance, include it
+      if ((node.type === 'COMPONENT' || node.type === 'COMPONENT_SET' || node.type === 'INSTANCE') && !processedIds.has(node.id)) {
         try {
           const props = this.extractComponentProperties(node, currentPage.name);
           if (props) {
-            // Check if we already added this component
-            if (!components.find(c => c.id === props.id)) {
-              components.push(props);
-            }
+            components.push(props);
+            processedIds.add(node.id);
           }
         } catch (error) {
           this.errors.push({

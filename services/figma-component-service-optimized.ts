@@ -519,22 +519,10 @@ export class FigmaComponentServiceOptimized {
       return { components: [], totalInstances: 0 };
     }
     
-    // OPTIMIZATION: Quick sample check - if no components in sample, do a lighter scan
-    const likelyHasComponents = this.pageHasComponents(page);
-
-    // Use a more efficient traversal with early exit
+    // Collect all component nodes (full traversal — sampling heuristics
+    // were causing missed components in deeply nested page structures)
     const componentsToProcess: SceneNode[] = [];
-    
-    // First pass: collect component nodes (fast)
-    // If quick check found components, do full collection; otherwise use a smaller limit
-    const effectiveMaxNodes = likelyHasComponents ? maxNodes : (maxNodes > 0 ? Math.min(maxNodes, 50) : 50);
-    this.collectComponentNodes(page, componentsToProcess, effectiveMaxNodes);
-    
-    // If we hit the limit on a "likely no components" page but found some, do full scan
-    if (!likelyHasComponents && componentsToProcess.length >= effectiveMaxNodes) {
-      componentsToProcess.length = 0; // Clear
-      this.collectComponentNodes(page, componentsToProcess, maxNodes);
-    }
+    this.collectComponentNodes(page, componentsToProcess, maxNodes);
     
     // OPTIMIZATION: Clear token refs cache before processing new page
     // WeakMap will handle cleanup, but this helps with memory for large pages
