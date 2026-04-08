@@ -5,7 +5,7 @@ import { on, emit } from '@create-figma-plugin/utilities';
 import '!./output.css';
 
 // Import version from package.json
-const PLUGIN_VERSION = '1.0.2';
+const PLUGIN_VERSION = '1.0.3';
 
 // Debounce utility for search optimization
 function useDebounce<T>(value: T, delay: number): T {

@@ -146,7 +146,7 @@ TokenMatch can match tokens for:
 ## 🔧 Technical Details
 
 ### Version
-Current version: **1.0.0**
+Current version: **1.0.3**
 
 ### Requirements
 - Figma desktop app or browser version
@@ -159,7 +159,7 @@ Current version: **1.0.0**
 
 ## 📝 Changelog
 
-### 1.3.0 (Current)
+### 1.0.3 (Current)
 - Unified token source abstraction with 6 source types
 - GitLab and BitBucket support (Cloud + self-hosted)
 - npm package support with version resolution and file pattern filtering
